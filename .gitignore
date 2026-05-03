@@ -1,0 +1,38 @@
+# Build artifacts
+/atelier
+/atelier.exe
+/dist/
+
+# Taskfile cache
+/.task/
+
+# GoReleaser cache
+/.goreleaser-cache/
+
+# Go test/coverage output
+*.test
+*.out
+coverage.txt
+
+# Future runtime data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.jsonl
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# SDD context (local-only, persisted in engram)
+.atl/
+
+# Dragon source — already embedded verbatim in internal/tui/ascii.go
+dragon_atelier_ascii.txt

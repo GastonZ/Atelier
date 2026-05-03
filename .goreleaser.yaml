@@ -1,0 +1,57 @@
+# STUB — exercised at first v0.1.0 tag.
+# Validate with: goreleaser check
+# Re-validate before tagging v0.1.0 — goreleaser schema evolves.
+version: 2
+
+project_name: atelier
+
+before:
+  hooks:
+    - go mod tidy
+    - go vet ./...
+
+builds:
+  - id: atelier
+    main: ./cmd/atelier
+    binary: atelier
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/gastonz/atelier/internal/version.Version={{.Version}}
+
+archives:
+  - format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  groups:
+    - title: Features
+      regexp: "^feat"
+      order: 0
+    - title: Bug Fixes
+      regexp: "^fix"
+      order: 1
+    - title: Other
+      order: 999
+  filters:
+    exclude:
+      - "^docs"
+      - "^test"
+      - "^chore"
+
+release:
+  github:
+    owner: GastonZ
+    name: Atelier
+  draft: true

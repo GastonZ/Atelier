@@ -1,0 +1,47 @@
+version: '3'
+
+vars:
+  OUTPUT: "atelier{{exeExt}}"
+
+tasks:
+  default:
+    deps: [build]
+
+  build:
+    desc: Build the atelier binary
+    cmds:
+      - go build -o {{.OUTPUT}} ./cmd/atelier
+
+  run:
+    desc: Build and run atelier
+    deps: [build]
+    cmds:
+      - "./{{.OUTPUT}}"
+
+  tidy:
+    desc: Run go mod tidy
+    cmds:
+      - go mod tidy
+
+  vet:
+    desc: Run go vet on all packages
+    cmds:
+      - go vet ./...
+
+  lint:
+    desc: Run go vet (alias for lint target — install golangci-lint for full linting)
+    cmds:
+      - go vet ./...
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test ./...
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - cmd: rm -f {{.OUTPUT}}
+        platforms: [linux, darwin]
+      - cmd: del {{.OUTPUT}}
+        platforms: [windows]
