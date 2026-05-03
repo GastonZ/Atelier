@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/gastonz/atelier/internal/actions"
+	"github.com/gastonz/atelier/internal/registry"
 	"github.com/gastonz/atelier/internal/tui"
 	"github.com/gastonz/atelier/internal/version"
 )
@@ -34,7 +36,10 @@ func main() {
 		return
 
 	case "", "tui":
-		if err := tui.Run(); err != nil {
+		reg := registry.NewFileRegistry()
+		op := actions.NewOpener()
+		cb := actions.NewClipboard()
+		if err := tui.Run(reg, op, cb); err != nil {
 			fmt.Fprintln(os.Stderr, "atelier:", err)
 			os.Exit(1)
 		}

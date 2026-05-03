@@ -53,19 +53,44 @@ var (
 	HintStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(cSurface2)).Italic(true)
 )
 
+// Screen UI styles — used for list, form, and action views.
+var (
+	// TitleBarStyle renders screen titles: bold, Dragon Red, padded.
+	TitleBarStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color(dragonRed)).
+			Bold(true).
+			PaddingBottom(1)
+
+	// FooterHintStyle renders the keyboard hint line at the bottom of each screen.
+	FooterHintStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color(cSurface2)).
+			Italic(true)
+
+	// ErrorInlineStyle renders inline form validation errors in Catppuccin Red.
+	ErrorInlineStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color(cRed))
+
+	// FlashSuccessStyle renders success flash messages in Catppuccin Green, italic.
+	FlashSuccessStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color(cGreen)).
+				Italic(true)
+
+	// SelectedRowStyle renders the selected action row in ScreenProjectActions.
+	SelectedRowStyle = lipgloss.NewStyle().
+				Background(lipgloss.Color(cSurface0)).
+				Foreground(lipgloss.Color(cLavender))
+)
+
 // The following blank identifiers prevent "declared and not used" errors for
 // Catppuccin Mocha palette tokens not yet referenced by active style declarations.
 // They are retained for completeness of the canonical palette.
 var (
 	_ = lipgloss.Color(cBase)
 	_ = lipgloss.Color(cCrust)
-	_ = lipgloss.Color(cSurface0)
 	_ = lipgloss.Color(cText)
 	_ = lipgloss.Color(cMauve)
 	_ = lipgloss.Color(cSapphire)
 	_ = lipgloss.Color(cPink)
-	_ = lipgloss.Color(cRed)
-	_ = lipgloss.Color(cGreen)
 	_ = lipgloss.Color(cYellow)
 	_ = lipgloss.Color(cPeach)
 )
