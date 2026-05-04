@@ -21,6 +21,12 @@ coverage.txt
 *.db-shm
 *.jsonl
 
+# Test fixtures — synthetic transcripts MUST be tracked
+!internal/transcripts/testdata/**/*.jsonl
+
+# Editor / build backup files
+*~
+
 # IDE
 .vscode/
 .idea/

@@ -1,12 +1,16 @@
 package tui
 
 import (
+	"time"
+
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gastonz/atelier/internal/actions"
+	"github.com/gastonz/atelier/internal/config"
 	"github.com/gastonz/atelier/internal/registry"
+	"github.com/gastonz/atelier/internal/transcripts"
 )
 
 // Screen identifies the active TUI screen.
@@ -25,6 +29,12 @@ const (
 	ScreenProjectActions
 	// ScreenConfirmDelete shows the deletion confirmation prompt.
 	ScreenConfirmDelete
+	// ScreenAgentMonitor shows live tiles for active Claude sessions.
+	ScreenAgentMonitor
+	// ScreenAgentZoom shows the detail view for a single session tile.
+	ScreenAgentZoom
+	// ScreenAgentReplay shows step-by-step replay of a session's events.
+	ScreenAgentReplay
 )
 
 // Model holds ALL application state. No sub-models.
@@ -60,6 +70,30 @@ type Model struct {
 
 	// --- transient feedback ---
 	ActionFlash string // exported for tests — last action result, cleared on next nav
+
+	// --- agent monitor dependencies (injected via NewWithMonitor) ---
+	agentScanner transcripts.Scanner
+	agentWatcher transcripts.Watcher
+	priceTable   transcripts.PriceTable
+	atelierCfg   config.AtelierConfig
+
+	// --- agent monitor state ---
+	agentSessions    []transcripts.Session // active sessions, sorted mtime-desc
+	AgentTileCursor  int                   // exported for tests — index into agentSessions
+	agentExpanded    map[string]bool        // sessionID → sub-agent group expanded?
+	AgentZoomedID    string                // exported for tests — empty when not zoomed
+	AgentFlash       string                // exported for tests — transient error/warning
+	agentFlashUntil  time.Time             // auto-clear flash after N seconds
+	watcherCancel    func()                // closes watcher when leaving ScreenAgentMonitor
+	watcherCancelSet bool                  // tracks whether cancel was called (for tests)
+	agentWatcherCh   <-chan transcripts.Event // stored channel returned by Watch; used for drain re-queuing
+
+	// --- replay state ---
+	replayEvents []transcripts.Event // snapshot loaded at replay entry
+	ReplayCursor int                 // exported for tests — mirror of replayCtrl.Cursor()
+	ReplayPaused bool                // exported for tests — mirror of replayCtrl.Paused()
+	ReplaySpeed  float64             // exported for tests — mirror of replayCtrl.Speed()
+	replayCtrl   *transcripts.Replay // authoritative replay state
 }
 
 // New returns a Model wired with the production-or-mock dependencies.
@@ -86,6 +120,27 @@ func New(reg registry.Registry, op actions.Opener, cb actions.Clipboard) Model {
 		pathInput: path,
 		AddFocus:  0,
 	}
+}
+
+// NewWithMonitor returns a Model wired with both the existing dependencies and the
+// new agent-monitor dependencies. cmd/atelier/main.go will switch to this in Batch 4.
+// Tests use this to inject fakes for the monitor screens.
+func NewWithMonitor(
+	reg registry.Registry,
+	op actions.Opener,
+	cb actions.Clipboard,
+	scanner transcripts.Scanner,
+	watcher transcripts.Watcher,
+	prices transcripts.PriceTable,
+	cfg config.AtelierConfig,
+) Model {
+	m := New(reg, op, cb)
+	m.agentScanner = scanner
+	m.agentWatcher = watcher
+	m.priceTable = prices
+	m.atelierCfg = cfg
+	m.agentExpanded = make(map[string]bool)
+	return m
 }
 
 // Init is called by Bubble Tea on program start.
@@ -125,6 +180,32 @@ func projectsToItems(projects []registry.Project) []list.Item {
 		items[i] = projectItem{project: p}
 	}
 	return items
+}
+
+// initOrUpdateProjectList builds the bubbles list when dimensions are known,
+// or refreshes its items if already built. Idempotent and safe to call from
+// any handler (WindowSizeMsg, projectsLoadedMsg) without screen-state checks.
+//
+// The original gate "only init while on ScreenProjects" caused a bug where
+// WindowSizeMsg fires once at startup on ScreenWelcome — ListInited stayed
+// false forever, so the list never rendered when navigating into Projects.
+func (m Model) initOrUpdateProjectList() Model {
+	if m.Width <= 0 || m.Height <= 0 {
+		return m
+	}
+	items := projectsToItems(m.projects)
+	if !m.ListInited {
+		reservedRows := 4 // title + footer + flash + spacer
+		listHeight := m.Height - reservedRows
+		if listHeight < 1 {
+			listHeight = 1
+		}
+		m.list = newProjectList(m.Width, listHeight, items)
+		m.ListInited = true
+	} else {
+		m.list.SetItems(items)
+	}
+	return m
 }
 
 // findProject returns the project with the given id, or nil if not found.
@@ -179,6 +260,38 @@ func SetAddError(m Model, msg string) Model {
 // SetActionFlash returns a new Model with ActionFlash set to the given message.
 func SetActionFlash(m Model, msg string) Model {
 	m.ActionFlash = msg
+	return m
+}
+
+// --- Agent monitor accessor/helpers (exported for tests) --------------------
+
+// AgentSessions returns the active session slice (exported for tests).
+func (m Model) AgentSessions() []transcripts.Session { return m.agentSessions }
+
+// AgentExpanded returns true if the given session's sub-agents are expanded.
+func (m Model) AgentExpanded(sessionID string) bool { return m.agentExpanded[sessionID] }
+
+// WatcherCancelCalled returns true if watcherCancel was called (goroutine-leak test gate).
+func (m Model) WatcherCancelCalled() bool { return m.watcherCancelSet }
+
+// ReplayLen returns the number of events in the current replay snapshot.
+func (m Model) ReplayLen() int { return len(m.replayEvents) }
+
+// initAgentExpanded ensures agentExpanded is non-nil (safe to mutate in Update).
+func (m Model) initAgentExpanded() Model {
+	if m.agentExpanded == nil {
+		m.agentExpanded = make(map[string]bool)
+	}
+	return m
+}
+
+// callWatcherCancel calls watcherCancel exactly once and marks it called.
+func (m Model) callWatcherCancel() Model {
+	if m.watcherCancel != nil && !m.watcherCancelSet {
+		m.watcherCancel()
+	}
+	m.watcherCancelSet = true
+	m.watcherCancel = nil
 	return m
 }
 

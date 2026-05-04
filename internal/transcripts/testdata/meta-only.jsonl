@@ -1,0 +1,4 @@
+{"type":"last-prompt","leafUuid":"uuid-meta-leaf-01","sessionId":"session-meta-001"}
+{"type":"permission-mode","permissionMode":"bypassPermissions","sessionId":"session-meta-001"}
+{"type":"ai-title","aiTitle":"Dragon Atelier Architecture","sessionId":"session-meta-001"}
+{"type":"file-history-snapshot","files":["main.go","go.mod"],"sessionId":"session-meta-001"}

@@ -1,0 +1,6 @@
+{"type":"progress","data":{"type":"hook_progress","hookEvent":"PreToolUse","hookName":"check-permissions","command":"check"},"toolUseID":"tool-progress-001","parentToolUseID":"","uuid":"uuid-noisy-001","timestamp":"2026-01-05T08:00:00.000Z","sessionId":"session-noisy-001"}
+{"type":"attachment","attachment":{"type":"hook_success","hookName":"check-permissions","output":"OK"},"uuid":"uuid-noisy-002","timestamp":"2026-01-05T08:00:01.000Z","sessionId":"session-noisy-001"}
+{"type":"progress","data":{"type":"hook_progress","hookEvent":"PostToolUse","hookName":"post-check","command":"verify"},"toolUseID":"tool-progress-002","parentToolUseID":"","uuid":"uuid-noisy-003","timestamp":"2026-01-05T08:00:02.000Z","sessionId":"session-noisy-001"}
+{"type":"attachment","attachment":{"type":"skill_listing","skills":["read","write","bash"]},"uuid":"uuid-noisy-004","timestamp":"2026-01-05T08:00:03.000Z","sessionId":"session-noisy-001"}
+{"type":"progress","data":{"type":"hook_progress","hookEvent":"PreToolUse","hookName":"another-hook","command":"run"},"toolUseID":"tool-progress-003","parentToolUseID":"","uuid":"uuid-noisy-005","timestamp":"2026-01-05T08:00:04.000Z","sessionId":"session-noisy-001"}
+{"type":"attachment","attachment":{"type":"deferred_tools_delta","tools":[]},"uuid":"uuid-noisy-006","timestamp":"2026-01-05T08:00:05.000Z","sessionId":"session-noisy-001"}

@@ -2,8 +2,11 @@ package tui
 
 import (
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/gastonz/atelier/internal/transcripts"
 )
 
 // View renders the current screen state as a string.
@@ -23,6 +26,12 @@ func (m Model) View() string {
 		return m.viewProjectActions()
 	case ScreenConfirmDelete:
 		return m.viewConfirmDelete()
+	case ScreenAgentMonitor:
+		return m.viewAgentMonitor()
+	case ScreenAgentZoom:
+		return m.viewAgentZoom()
+	case ScreenAgentReplay:
+		return m.viewAgentReplay()
 	}
 	return ""
 }
@@ -221,4 +230,247 @@ func (m Model) viewConfirmDelete() string {
 		return lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center, inner)
 	}
 	return inner
+}
+
+// ============================================================================
+// Agent monitor views
+// ============================================================================
+
+// viewAgentMonitor renders ScreenAgentMonitor — live tile grid.
+func (m Model) viewAgentMonitor() string {
+	title := TitleBarStyle.Render("=== El Atelier ===")
+
+	// Flash line (watcher errors, price warnings)
+	var flash string
+	if m.AgentFlash != "" {
+		flash = AgentFlashStyle.Render("  " + m.AgentFlash)
+	}
+
+	// Body: empty state or tile list
+	var body string
+	if len(m.agentSessions) == 0 {
+		emptyText := CopyMonitorEmpty
+		if m.Width > 0 && m.Height > 0 {
+			body = lipgloss.Place(m.Width, m.Height-4, lipgloss.Center, lipgloss.Center, emptyText)
+		} else {
+			body = emptyText
+		}
+	} else {
+		body = m.renderTileList()
+	}
+
+	footer := FooterHintStyle.Render(CopyFooterMonitor)
+
+	parts := []string{title}
+	if flash != "" {
+		parts = append(parts, flash)
+	}
+	parts = append(parts, body, footer)
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+// renderTileList renders all session tiles stacked vertically.
+func (m Model) renderTileList() string {
+	var rows []string
+	for i, s := range m.agentSessions {
+		rows = append(rows, m.renderTile(i, s))
+		// Expanded sub-agents
+		if m.agentExpanded[s.ID] {
+			for _, sub := range s.SubSessions {
+				rows = append(rows, SubAgentIndentStyle.Render(m.renderSubTile(sub)))
+			}
+		}
+	}
+	return strings.Join(rows, "\n")
+}
+
+// renderTile renders a single root session tile.
+func (m Model) renderTile(idx int, s transcripts.Session) string {
+	selected := idx == m.AgentTileCursor
+
+	name := s.ProjectName
+	if name == "" {
+		name = CopyMonitorUnmatched
+	}
+
+	// Last activity line
+	since := relativeTime(s.LastEventTime)
+	header := fmt.Sprintf("%s  ·  %s", name, since)
+
+	// Cost line
+	costLine := TileCostStyle.Render(fmt.Sprintf(CopyCostLine, s.AccumulatedUSD))
+
+	// Sub-agent indicator
+	var subLine string
+	if len(s.SubSessions) > 0 {
+		if m.agentExpanded[s.ID] {
+			subLine = fmt.Sprintf("  %d sub-agentes (abiertos)", len(s.SubSessions))
+		} else {
+			subLine = fmt.Sprintf("  %d sub-agentes", len(s.SubSessions))
+		}
+	}
+
+	// Last event preview
+	var lastEvt string
+	if len(s.Events) > 0 {
+		lastEvt = TileLastEventHeaderStyle.Render(CopyLastEventHeader) + " " + eventPreview(s.Events[len(s.Events)-1])
+	}
+
+	inner := header + "\n" + costLine
+	if subLine != "" {
+		inner += "\n" + subLine
+	}
+	if lastEvt != "" {
+		inner += "\n" + lastEvt
+	}
+
+	if selected {
+		return TileActiveStyle.Render(inner)
+	}
+	return TileInactiveStyle.Render(inner)
+}
+
+// renderSubTile renders a sub-agent session as a compact nested tile.
+func (m Model) renderSubTile(s transcripts.Session) string {
+	name := s.ProjectName
+	if name == "" {
+		name = "sub-agente"
+	}
+	since := relativeTime(s.LastEventTime)
+	return fmt.Sprintf("  · %s  %s  %s", name, since, fmt.Sprintf(CopyCostLine, s.AccumulatedUSD))
+}
+
+// viewAgentZoom renders ScreenAgentZoom — detail view for a single session.
+func (m Model) viewAgentZoom() string {
+	title := TitleBarStyle.Render("=== El Atelier — Detalle ===")
+
+	// Find the zoomed session
+	var s *transcripts.Session
+	for i := range m.agentSessions {
+		if m.agentSessions[i].ID == m.AgentZoomedID {
+			s = &m.agentSessions[i]
+			break
+		}
+	}
+
+	var body string
+	if s == nil {
+		body = SubtitleStyle.Render("  Sesión no encontrada.")
+	} else {
+		name := s.ProjectName
+		if name == "" {
+			name = CopyMonitorUnmatched
+		}
+		since := relativeTime(s.LastEventTime)
+		costLine := TileCostStyle.Render(fmt.Sprintf(CopyCostLine, s.AccumulatedUSD))
+		lastEvt := ""
+		if len(s.Events) > 0 {
+			lastEvt = TileLastEventHeaderStyle.Render(CopyLastEventHeader) + "\n  " + eventPreview(s.Events[len(s.Events)-1])
+		}
+
+		lines := []string{
+			SubtitleStyle.Render("  " + name + "  ·  " + since),
+			"  " + costLine,
+		}
+		if lastEvt != "" {
+			lines = append(lines, "  "+lastEvt)
+		}
+		body = strings.Join(lines, "\n")
+	}
+
+	// Flash
+	var flash string
+	if m.AgentFlash != "" {
+		flash = AgentFlashStyle.Render("  " + m.AgentFlash)
+	}
+
+	footer := FooterHintStyle.Render(CopyFooterZoom)
+
+	parts := []string{title, body}
+	if flash != "" {
+		parts = append(parts, flash)
+	}
+	parts = append(parts, footer)
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+// viewAgentReplay renders ScreenAgentReplay — step-by-step event replay.
+func (m Model) viewAgentReplay() string {
+	title := ReplayHeaderStyle.Render(CopyReplayHeader)
+
+	// Status line: cursor/total, speed, paused flag
+	totalEvents := len(m.replayEvents)
+	paused := ""
+	if m.ReplayPaused {
+		paused = "  [pausado]"
+	}
+	status := fmt.Sprintf("  evento %d / %d  ·  velocidad %.1fx%s",
+		m.ReplayCursor+1, totalEvents, m.ReplaySpeed, paused)
+
+	// Current event body
+	var eventBody string
+	if totalEvents > 0 && m.ReplayCursor < totalEvents {
+		eventBody = "  " + eventPreview(m.replayEvents[m.ReplayCursor])
+	}
+
+	footer := FooterHintStyle.Render(CopyFooterReplay)
+
+	parts := []string{title, status}
+	if eventBody != "" {
+		parts = append(parts, eventBody)
+	}
+	parts = append(parts, footer)
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+// ============================================================================
+// Shared view helpers
+// ============================================================================
+
+// relativeTime returns a human-readable relative time string ("2m ago", "just now").
+func relativeTime(t time.Time) string {
+	if t.IsZero() {
+		return "—"
+	}
+	diff := time.Since(t)
+	switch {
+	case diff < time.Minute:
+		return "ahora mismo"
+	case diff < time.Hour:
+		return fmt.Sprintf("%dm", int(diff.Minutes()))
+	case diff < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(diff.Hours()))
+	default:
+		return fmt.Sprintf("%dd", int(diff.Hours()/24))
+	}
+}
+
+// eventPreview returns a one-line summary of an event for display.
+func eventPreview(evt transcripts.Event) string {
+	if evt == nil {
+		return "—"
+	}
+	switch e := evt.(type) {
+	case *transcripts.AssistantEvent:
+		preview := e.Text
+		if len(preview) > 80 {
+			preview = preview[:80] + "…"
+		}
+		return preview
+	case *transcripts.ToolUseEvent:
+		return "tool: " + e.ToolName
+	case *transcripts.UserEvent:
+		preview := e.Text
+		if len(preview) > 60 {
+			preview = preview[:60] + "…"
+		}
+		return "user: " + preview
+	case *transcripts.ToolResultEvent:
+		if e.IsError {
+			return "tool_result: [error] " + e.OutputSummary
+		}
+		return "tool_result: " + e.OutputSummary
+	default:
+		return fmt.Sprintf("[%T]", evt)
+	}
 }

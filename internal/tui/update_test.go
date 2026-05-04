@@ -1,6 +1,7 @@
 package tui_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -233,6 +234,56 @@ func TestScreenProjects_WindowSizeMsgLazyInit(t *testing.T) {
 	// After WindowSizeMsg, list should be initialized (no panic, non-zero dimensions)
 	if !m.ListInited {
 		t.Error("list should be initialized after WindowSizeMsg while on ScreenProjects")
+	}
+}
+
+// TestRealFlow_WindowSizeOnWelcomeThenProjectsLoadedInitsList is a regression test
+// for the bug where WindowSizeMsg fires once at startup (while on ScreenWelcome),
+// then the user navigates into ScreenProjects and projectsLoadedMsg arrives — but
+// ListInited stayed false because the original WindowSizeMsg handler only
+// initialized the list while Screen == ScreenProjects. With multiple registered
+// projects this manifested as: view stuck on "Invocando los tomos...", Enter
+// silently picked projects[0] (an invisible item).
+//
+// The fix: initOrUpdateProjectList runs from BOTH WindowSizeMsg and
+// projectsLoadedMsg, gated only by non-zero dimensions. After the projects
+// arrive on ScreenProjects, the list is built (or refreshed) so the user sees it.
+func TestRealFlow_WindowSizeOnWelcomeThenProjectsLoadedInitsList(t *testing.T) {
+	reg := newTestRegistry(t)
+	if _, err := reg.Add("Tomo 1", t.TempDir()); err != nil {
+		t.Fatalf("seed Add 1: %v", err)
+	}
+	if _, err := reg.Add("Tomo 2", t.TempDir()); err != nil {
+		t.Fatalf("seed Add 2: %v", err)
+	}
+
+	m := newTestModelWithReg(t, reg)
+
+	// WindowSizeMsg fires at startup while on ScreenWelcome (the real Bubble Tea flow).
+	m, _ = dispatchKey(t, m, tea.WindowSizeMsg{Width: 80, Height: 24})
+	if m.Screen != tui.ScreenWelcome {
+		t.Fatalf("precondition: Screen = %v, want ScreenWelcome", m.Screen)
+	}
+
+	// User presses Enter on Welcome → Screen = ScreenProjects, loadProjectsCmd fires.
+	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.Screen != tui.ScreenProjects {
+		t.Fatalf("after Enter: Screen = %v, want ScreenProjects", m.Screen)
+	}
+
+	// Drain the loadProjectsCmd to deliver projectsLoadedMsg synchronously.
+	m = tui.DrainProjectsLoaded(t, m)
+
+	// Regression assertion: list MUST be initialized after the projects arrive,
+	// even though WindowSizeMsg fired earlier on ScreenWelcome.
+	if !m.ListInited {
+		t.Fatal("ListInited should be true after WindowSizeMsg(Welcome) + projectsLoadedMsg(Projects)")
+	}
+
+	// View must NOT show the loading placeholder once the list is initialized.
+	view := m.View()
+	if strings.Contains(view, "Invocando los tomos") {
+		t.Errorf("view should not contain loading placeholder once list is built; got:\n%s", view)
 	}
 }
 

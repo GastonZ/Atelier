@@ -81,6 +81,46 @@ var (
 				Foreground(lipgloss.Color(cLavender))
 )
 
+// --- Agent monitor tile styles -----------------------------------------------
+
+var (
+	// TileActiveStyle renders the border of the currently-selected tile.
+	TileActiveStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color(cLavender)).
+			Padding(0, 1)
+
+	// TileInactiveStyle renders the border of unselected tiles.
+	TileInactiveStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color(cSurface2)).
+				Padding(0, 1)
+
+	// TileCostStyle renders the cost line inside a tile.
+	TileCostStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color(cGreen))
+
+	// TileLastEventStyle renders the last-event preview header.
+	TileLastEventHeaderStyle = lipgloss.NewStyle().
+					Foreground(lipgloss.Color(cSubtext0)).
+					Italic(true)
+
+	// SubAgentIndentStyle renders nested sub-agent tiles with a dimmed indent.
+	SubAgentIndentStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color(cSurface2)).
+				PaddingLeft(2)
+
+	// ReplayHeaderStyle renders the "Crónica del taller" header.
+	ReplayHeaderStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color(cMauve)).
+				Bold(true)
+
+	// AgentFlashStyle renders transient error/warning messages.
+	AgentFlashStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color(cYellow)).
+			Italic(true)
+)
+
 // The following blank identifiers prevent "declared and not used" errors for
 // Catppuccin Mocha palette tokens not yet referenced by active style declarations.
 // They are retained for completeness of the canonical palette.
@@ -88,9 +128,6 @@ var (
 	_ = lipgloss.Color(cBase)
 	_ = lipgloss.Color(cCrust)
 	_ = lipgloss.Color(cText)
-	_ = lipgloss.Color(cMauve)
 	_ = lipgloss.Color(cSapphire)
 	_ = lipgloss.Color(cPink)
-	_ = lipgloss.Color(cYellow)
-	_ = lipgloss.Color(cPeach)
 )
