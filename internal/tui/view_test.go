@@ -149,7 +149,17 @@ func TestViewProjectActions_RendersActionLabels(t *testing.T) {
 	}
 
 	view := m.View()
-	for _, label := range []string{"Abrir en Claude Code", "Invocar PowerShell", "Copiar el sendero"} {
+	// T33: verify all 8 action labels are rendered (new menu order per design §5 and R9.1).
+	for _, label := range []string{
+		"Abrir en Claude Code", // 0
+		"Abrir en VS Code",     // 1 (NEW)
+		"Invocar PowerShell",   // 2 (was 1)
+		"Copiar el sendero",    // 3 (was 2)
+		"Ver memoria",          // 4 (NEW)
+		"Ver historial",        // 5 (NEW)
+		"Ver disco",            // 6 (NEW)
+		"Borrar",               // 7 (destructive last)
+	} {
 		if !strings.Contains(view, label) {
 			t.Errorf("ScreenProjectActions view missing label %q", label)
 		}

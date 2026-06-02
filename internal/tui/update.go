@@ -8,6 +8,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gastonz/atelier/internal/actions"
 	"github.com/gastonz/atelier/internal/config"
+	"github.com/gastonz/atelier/internal/audio"
+	"github.com/gastonz/atelier/internal/engram"
+	"github.com/gastonz/atelier/internal/git"
+	"github.com/gastonz/atelier/internal/nowplaying"
 	"github.com/gastonz/atelier/internal/registry"
 	"github.com/gastonz/atelier/internal/transcripts"
 )
@@ -30,6 +34,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.projects = msg.projects
 		m = m.initOrUpdateProjectList()
+		// T32: trigger git status fan-out if cache is empty and git reader is available.
+		if m.gitStatusReader != nil && m.gitStatusCache == nil && !m.gitStatusLoading {
+			m.gitStatusLoading = true
+			return m, loadGitStatusCmd(m.gitStatusReader, m.projects)
+		}
 		return m, nil
 
 	case actionDoneMsg:
@@ -62,9 +71,140 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pollingTickMsg:
 		return m.handlePollingTick()
 
+	case nowPlayingTickMsg:
+		return m.handleNowPlayingTick()
+
+	case animTickMsg:
+		return m.handleAnimTick()
+
+	case nowPlayingLoadedMsg:
+		// Ambient widget: keep the last good snapshot on error rather than
+		// blanking the card on a transient helper hiccup.
+		if msg.err == nil {
+			m.currentTrack = msg.track
+		}
+		return m, nil
+
+	case memoryLoadedMsg:
+		return m.handleMemoryLoaded(msg)
+
+	case memoryDetailLoadedMsg:
+		return m.handleMemoryDetailLoaded(msg)
+
+	case historyLoadedMsg:
+		return m.handleHistoryLoaded(msg)
+
+	case historyDetailLoadedMsg:
+		return m.handleHistoryDetailLoaded(msg)
+
+	case gitStatusLoadedMsg:
+		return m.handleGitStatusLoaded(msg)
+
+	case diskUsageLoadedMsg:
+		return m.handleDiskUsageLoaded(msg)
+
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
+	return m, nil
+}
+
+// handleMemoryLoaded processes the result of loadMemoryCmd.
+func (m Model) handleMemoryLoaded(msg memoryLoadedMsg) (tea.Model, tea.Cmd) {
+	m.memoryLoading = false
+	if msg.err != nil {
+		m.memoryError = fmt.Sprintf(CopyMemoryError, msg.err.Error())
+		return m, nil
+	}
+	m.memoryEntries = msg.entries
+	m.memoryError = ""
+	// Init or refresh memoryList.
+	items := memoryObsToItems(msg.entries)
+	if m.Width > 0 && m.Height > 0 {
+		listH := m.Height - 4
+		if listH < 1 {
+			listH = 1
+		}
+		ml := newMemoryList(m.Width, listH, items)
+		m.memoryList = ml
+	}
+	return m, nil
+}
+
+// handleMemoryDetailLoaded processes the result of loadMemoryDetailCmd.
+func (m Model) handleMemoryDetailLoaded(msg memoryDetailLoadedMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		m.memoryError = fmt.Sprintf(CopyMemoryError, msg.err.Error())
+		return m, nil
+	}
+	obs := msg.obs
+	m.memoryViewing = &obs
+	// Init viewport.
+	m.memoryViewport = newDetailViewport(m.Width, m.Height)
+	m.memoryViewport.SetContent(obs.Content)
+	return m, nil
+}
+
+// handleHistoryLoaded processes the result of loadHistoryCmd.
+func (m Model) handleHistoryLoaded(msg historyLoadedMsg) (tea.Model, tea.Cmd) {
+	m.historyLoading = false
+	if msg.err != nil {
+		m.historyError = fmt.Sprintf(CopyHistoryError, msg.err.Error())
+		return m, nil
+	}
+	m.historyEntries = msg.entries
+	m.historyError = ""
+	items := historyEntriesToItems(msg.entries)
+	if m.Width > 0 && m.Height > 0 {
+		listH := m.Height - 4
+		if listH < 1 {
+			listH = 1
+		}
+		hl := newHistoryList(m.Width, listH, items)
+		m.historyList = hl
+	}
+	return m, nil
+}
+
+// handleHistoryDetailLoaded processes the result of a history detail cmd.
+func (m Model) handleHistoryDetailLoaded(msg historyDetailLoadedMsg) (tea.Model, tea.Cmd) {
+	m.historyDetailLoading = false
+	if msg.err != nil {
+		m.historyError = fmt.Sprintf(CopyHistoryError, msg.err.Error())
+		return m, nil
+	}
+	m.historyDetailBody = msg.body
+	m.historyViewport = newDetailViewport(m.Width, m.Height)
+	m.historyViewport.SetContent(msg.body)
+	return m, nil
+}
+
+// handleGitStatusLoaded processes the result of loadGitStatusCmd.
+func (m Model) handleGitStatusLoaded(msg gitStatusLoadedMsg) (tea.Model, tea.Cmd) {
+	m.gitStatusLoading = false
+	if msg.err != nil {
+		m.ActionFlash = CopyGitMissing
+		return m, nil
+	}
+	m.gitStatusCache = msg.statuses
+	// Rebuild list items with git status indicators (T32).
+	if m.ListInited {
+		items := projectsToItemsWithStatus(m.projects, m.gitStatusCache)
+		m.list.SetItems(items)
+	}
+	return m, nil
+}
+
+// handleDiskUsageLoaded processes the result of loadDiskUsageCmd.
+func (m Model) handleDiskUsageLoaded(msg diskUsageLoadedMsg) (tea.Model, tea.Cmd) {
+	m.diskLoading = false
+	if msg.err != nil {
+		m.diskError = msg.err.Error()
+		return m, nil
+	}
+	m.diskEngramBytes = msg.engramBytes
+	m.diskClaudeProjectsTotal = msg.claudeBytes
+	m.diskPerTomo = msg.perTomo
 	return m, nil
 }
 
@@ -221,6 +361,41 @@ func (m Model) handlePollingTick() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(loadCmd, pollingTickCmd(m.atelierCfg))
 }
 
+// handleNowPlayingTick fires a fresh fetch and re-arms the ticker.
+// The loop runs regardless of screen (the card only renders on welcome) so the
+// snapshot is always current the moment the user returns to the welcome screen.
+func (m Model) handleNowPlayingTick() (tea.Model, tea.Cmd) {
+	if m.nowPlaying == nil {
+		return m, nil
+	}
+	return m, tea.Batch(loadNowPlayingCmd(m.nowPlaying), nowPlayingTickCmd())
+}
+
+// handleAnimTick reads a fresh spectrum frame while the visualizer is on screen.
+// It only re-arms the ticker while on the welcome screen, so the animation costs
+// nothing when the card isn't visible. Returning to welcome restarts it via
+// maybeAnimTick.
+func (m Model) handleAnimTick() (tea.Model, tea.Cmd) {
+	if m.audio == nil || m.Screen != ScreenWelcome {
+		return m, nil
+	}
+	if m.currentTrack.Present && m.currentTrack.Playing {
+		m.barLevels = m.audio.Levels(numBars)
+	} else {
+		m.barLevels = nil
+	}
+	return m, animTickCmd()
+}
+
+// maybeAnimTick returns a fresh animation tick when an analyzer is wired, used to
+// restart the loop when navigating back to the welcome screen.
+func (m Model) maybeAnimTick() tea.Cmd {
+	if m.audio == nil {
+		return nil
+	}
+	return animTickCmd()
+}
+
 // handleReplayLoaded initialises the replay controller from a loaded event set.
 func (m Model) handleReplayLoaded(msg replayLoadedMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
@@ -284,6 +459,32 @@ func RunWithMonitor(
 	cfg config.AtelierConfig,
 ) error {
 	m := NewWithMonitor(reg, op, cb, scanner, watcher, prices, cfg)
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	_, err := p.Run()
+	return err
+}
+
+// RunWithDailyPack creates and starts the Bubble Tea program wired with all
+// daily-driver-pack dependencies (monitor + engram + git). This is the production
+// entry point used by main.go after Batch 4.
+// engramCl may be nil — the TUI is nil-safe and will flash an error on memory ops.
+func RunWithDailyPack(
+	reg registry.Registry,
+	op actions.Opener,
+	cb actions.Clipboard,
+	scanner transcripts.Scanner,
+	watcher transcripts.Watcher,
+	prices transcripts.PriceTable,
+	cfg config.AtelierConfig,
+	engramCl engram.Client,
+	statusR git.StatusReader,
+	logR git.LogReader,
+	np nowplaying.Provider,
+	an audio.Analyzer,
+) error {
+	m := NewWithDailyPack(reg, op, cb, scanner, watcher, prices, cfg, engramCl, statusR, logR)
+	m = InjectNowPlaying(m, np)
+	m = InjectAudio(m, an)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err := p.Run()
 	return err

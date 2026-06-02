@@ -121,6 +121,35 @@ var (
 			Italic(true)
 )
 
+// --- Now-playing card styles (welcome screen) --------------------------------
+
+var (
+	// NowPlayingCardStyle frames the now-playing card. The border uses the deep
+	// dragon red so the panel reads as part of the dragon's identity.
+	NowPlayingCardStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color(dragonRed)).
+				Padding(0, 1)
+
+	// NowPlayingTitleStyle renders the track title in dragon ember, bold.
+	NowPlayingTitleStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color(dragonEmber)).
+				Bold(true)
+
+	// NowPlayingMetaStyle renders the artist/source/paused line, dimmed grey for
+	// readability against the red accents.
+	NowPlayingMetaStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color(cSubtext0))
+
+	// NowPlayingStatusStyle renders the "▶ playing" indicator in dragon ember.
+	NowPlayingStatusStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color(dragonEmber))
+
+	// NowPlayingBarsStyle renders the waveform glyphs in dragon ember.
+	NowPlayingBarsStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color(dragonEmber))
+)
+
 // The following blank identifiers prevent "declared and not used" errors for
 // Catppuccin Mocha palette tokens not yet referenced by active style declarations.
 // They are retained for completeness of the canonical palette.

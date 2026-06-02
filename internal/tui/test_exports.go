@@ -20,6 +20,15 @@ func RelativeTimeForTest(t time.Time) string {
 	return relativeTime(t)
 }
 
+// SetNowFuncForTest overrides the clock used by relativeTime and returns a
+// restore function. Tests call `defer tui.SetNowFuncForTest(fn)()` to pin the
+// clock and undo it afterwards, keeping relative-time output deterministic.
+func SetNowFuncForTest(f func() time.Time) func() {
+	prev := nowFunc
+	nowFunc = f
+	return func() { nowFunc = prev }
+}
+
 // ReplayIntervalForTest exposes replayInterval for tests.
 func ReplayIntervalForTest(speed float64) time.Duration {
 	return replayInterval(speed)

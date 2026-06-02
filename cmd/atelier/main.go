@@ -6,7 +6,11 @@ import (
 	"path/filepath"
 
 	"github.com/gastonz/atelier/internal/actions"
+	"github.com/gastonz/atelier/internal/audio"
 	"github.com/gastonz/atelier/internal/config"
+	"github.com/gastonz/atelier/internal/engram"
+	"github.com/gastonz/atelier/internal/git"
+	"github.com/gastonz/atelier/internal/nowplaying"
 	"github.com/gastonz/atelier/internal/registry"
 	"github.com/gastonz/atelier/internal/transcripts"
 	"github.com/gastonz/atelier/internal/tui"
@@ -69,7 +73,32 @@ func runTUI() {
 	scanner := transcripts.NewFileScanner(claudeRoot, transcripts.RealClock{}, prices)
 	watcher := transcripts.NewFsnotifyWatcher(cfg.PollingInterval())
 
-	if err := tui.RunWithMonitor(reg, op, cb, scanner, watcher, prices, cfg); err != nil {
+	// Daily driver pack dependencies (NEW — Batch 4).
+	// engramClient may be nil if the DB is missing; the TUI is nil-safe and will
+	// surface the error as a flash message when the user opens ScreenMemoryBrowser.
+	dbPath, dbPathErr := engram.DefaultDBPath()
+	var engramClient engram.Client
+	if dbPathErr == nil {
+		engramClient, _ = engram.NewClient(dbPath)
+	}
+	gitStatusReader := git.NewStatusReader()
+	gitLogReader := git.NewLogReader()
+
+	// Now-playing provider (SMTC on Windows, no-op elsewhere) — ambient widget
+	// on the welcome screen. nil-safe: the TUI hides the card when absent.
+	npProvider := nowplaying.NewProvider()
+
+	// Audio analyzer (WASAPI loopback on Windows) drives the live waveform.
+	// Closed on exit to stop the capture goroutine cleanly.
+	analyzer := audio.NewAnalyzer()
+	defer analyzer.Close()
+
+	if err := tui.RunWithDailyPack(
+		reg, op, cb,
+		scanner, watcher, prices, cfg,
+		engramClient, gitStatusReader, gitLogReader,
+		npProvider, analyzer,
+	); err != nil {
 		fmt.Fprintln(os.Stderr, "atelier:", err)
 		os.Exit(1)
 	}

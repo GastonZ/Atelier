@@ -1,0 +1,23 @@
+=== Memorias ===
+
+
+│ 2026-05-02  [architecture]  JWT auth middleware
+│ **What**: Switched from sessions to JWT
+
+  2026-05-03  [bugfix]  Fixed N+1 query
+  **What**: Added index to users table
+
+  2026-05-04  [decision]  Use Bubble Tea
+  **What**: Chose Bubble Tea for TUI framework
+
+
+
+
+
+
+
+
+
+
+
+  /: buscar  ·  enter: abrir  ·  esc: volver

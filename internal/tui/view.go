@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/gastonz/atelier/internal/disk"
 	"github.com/gastonz/atelier/internal/transcripts"
 )
 
@@ -32,6 +33,12 @@ func (m Model) View() string {
 		return m.viewAgentZoom()
 	case ScreenAgentReplay:
 		return m.viewAgentReplay()
+	case ScreenMemoryBrowser:
+		return m.viewMemoryBrowser()
+	case ScreenProjectHistory:
+		return m.viewProjectHistory()
+	case ScreenDiskUsage:
+		return m.viewDiskUsage()
 	}
 	return ""
 }
@@ -65,7 +72,13 @@ func (m Model) renderFullWelcome() string {
 		enterHint,
 		hint,
 	)
-	return lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center, block)
+	canvas := lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center, block)
+
+	// Float the now-playing card in the top-left corner, over the canvas.
+	if card := renderNowPlaying(m.currentTrack, m.barLevels); card != "" {
+		canvas = overlayTopLeft(canvas, card, 1, 2)
+	}
+	return canvas
 }
 
 // renderSmallFallback renders a minimal text-only welcome for small terminals.
@@ -116,9 +129,9 @@ func (m Model) viewProjects() string {
 
 	var footer string
 	if len(m.projects) == 0 {
-		footer = FooterHintStyle.Render("  n: inscribir nuevo  ·  esc: volver")
+		footer = FooterHintStyle.Render("  n: inscribir  ·  esc: volver")
 	} else {
-		footer = FooterHintStyle.Render("  n: inscribir nuevo  ·  enter: abrir  ·  d: borrar  ·  esc: volver")
+		footer = FooterHintStyle.Render(CopyFooterProjectsExt)
 	}
 
 	parts := []string{title, body}
@@ -173,9 +186,14 @@ func (m Model) viewProjectActions() string {
 	pathLine := SubtitleStyle.Render("  " + projectPath)
 
 	actions := []string{
-		"Abrir en Claude Code",
-		"Invocar PowerShell",
-		"Copiar el sendero",
+		"Abrir en Claude Code", // 0
+		"Abrir en VS Code",     // 1 (NEW)
+		"Invocar PowerShell",   // 2 (was 1)
+		"Copiar el sendero",    // 3 (was 2)
+		"Ver memoria",          // 4 (NEW)
+		"Ver historial",        // 5 (NEW)
+		"Ver disco",            // 6 (NEW)
+		"Borrar",               // 7 (existing, destructive last)
 	}
 
 	var actionLines []string
@@ -424,15 +442,160 @@ func (m Model) viewAgentReplay() string {
 }
 
 // ============================================================================
+// Daily driver pack views (T34, T37, T39, T41)
+// ============================================================================
+
+// viewMemoryBrowser renders ScreenMemoryBrowser.
+func (m Model) viewMemoryBrowser() string {
+	title := TitleBarStyle.Render("=== Memorias ===")
+
+	// Detail mode: show viewport.
+	if m.memoryViewing != nil {
+		header := SubtitleStyle.Render(fmt.Sprintf("  %s  [%s]  %s",
+			FormatHistoryDate(m.memoryViewing.Timestamp),
+			m.memoryViewing.Type,
+			m.memoryViewing.Title))
+		body := m.memoryViewport.View()
+		flash := ""
+		if m.memoryError != "" {
+			flash = AgentFlashStyle.Render("  " + m.memoryError)
+		}
+		footer := FooterHintStyle.Render(CopyFooterMemoryDetail)
+		parts := []string{title, header, body}
+		if flash != "" {
+			parts = append(parts, flash)
+		}
+		parts = append(parts, footer)
+		return lipgloss.JoinVertical(lipgloss.Left, parts...)
+	}
+
+	// List mode.
+	var body string
+	if m.memoryLoading {
+		body = HintStyle.Render("  " + CopyMemoryLoading)
+	} else if m.memoryError != "" {
+		body = AgentFlashStyle.Render("  " + m.memoryError)
+	} else if len(m.memoryEntries) == 0 {
+		body = HintStyle.Render("  " + CopyMemoryEmpty)
+	} else {
+		body = m.memoryList.View()
+	}
+
+	footer := FooterHintStyle.Render(CopyFooterMemoryList)
+	return lipgloss.JoinVertical(lipgloss.Left, title, body, footer)
+}
+
+// viewProjectHistory renders ScreenProjectHistory.
+func (m Model) viewProjectHistory() string {
+	title := TitleBarStyle.Render("=== Historial ===")
+
+	// Detail mode: show viewport.
+	if m.historyViewingRef != "" {
+		var header string
+		if m.historyDetailLoading {
+			header = HintStyle.Render("  " + CopyHistoryLoading)
+		}
+		body := m.historyViewport.View()
+		footer := FooterHintStyle.Render(CopyFooterHistoryDetail)
+		parts := []string{title}
+		if header != "" {
+			parts = append(parts, header)
+		}
+		parts = append(parts, body, footer)
+		return lipgloss.JoinVertical(lipgloss.Left, parts...)
+	}
+
+	// List mode.
+	var body string
+	if m.historyLoading {
+		body = HintStyle.Render("  " + CopyHistoryLoading)
+	} else if m.historyError != "" {
+		body = AgentFlashStyle.Render("  " + m.historyError)
+	} else if len(m.historyEntries) == 0 {
+		body = HintStyle.Render("  " + CopyHistoryEmpty)
+	} else {
+		body = m.historyList.View()
+	}
+
+	footer := FooterHintStyle.Render(CopyFooterHistoryList)
+	return lipgloss.JoinVertical(lipgloss.Left, title, body, footer)
+}
+
+// viewDiskUsage renders ScreenDiskUsage.
+func (m Model) viewDiskUsage() string {
+	title := TitleBarStyle.Render("=== Uso de Disco ===")
+
+	if m.diskLoading {
+		footer := FooterHintStyle.Render(CopyFooterDiskUsage)
+		return lipgloss.JoinVertical(lipgloss.Left, title,
+			HintStyle.Render("  "+CopyDiskLoading), footer)
+	}
+
+	if m.diskError != "" {
+		footer := FooterHintStyle.Render(CopyFooterDiskUsage)
+		return lipgloss.JoinVertical(lipgloss.Left, title,
+			AgentFlashStyle.Render("  "+m.diskError), footer)
+	}
+
+	var rows []string
+
+	// Row 0: Engram DB
+	engramLine := fmt.Sprintf("  Engram DB:     %s", disk.HumanReadable(m.diskEngramBytes))
+	if m.diskCursor == 0 {
+		rows = append(rows, SelectedRowStyle.Render(engramLine))
+	} else {
+		rows = append(rows, engramLine)
+	}
+
+	// Row 1: Claude projects total
+	claudeLine := fmt.Sprintf("  Claude total:  %s", disk.HumanReadable(m.diskClaudeProjectsTotal))
+	if m.diskCursor == 1 {
+		rows = append(rows, SelectedRowStyle.Render(claudeLine))
+	} else {
+		rows = append(rows, claudeLine)
+	}
+
+	// Rows 2+: per-tomo
+	for idx, p := range m.projects {
+		var size string
+		if m.diskPerTomo != nil {
+			if b, ok := m.diskPerTomo[p.ID]; ok && b > 0 {
+				size = disk.HumanReadable(b)
+			} else {
+				size = CopyDiskZeroPerTomo
+			}
+		} else {
+			size = CopyDiskZeroPerTomo
+		}
+		line := fmt.Sprintf("  %-20s %s", p.Name, size)
+		rowIdx := idx + 2
+		if m.diskCursor == rowIdx {
+			rows = append(rows, SelectedRowStyle.Render(line))
+		} else {
+			rows = append(rows, line)
+		}
+	}
+
+	body := strings.Join(rows, "\n")
+	footer := FooterHintStyle.Render(CopyFooterDiskUsage)
+	return lipgloss.JoinVertical(lipgloss.Left, title, "", body, "", footer)
+}
+
+// ============================================================================
 // Shared view helpers
 // ============================================================================
+
+// nowFunc is the clock used by relativeTime. It defaults to time.Now but is
+// overridable in tests so relative-time rendering is deterministic regardless
+// of the real wall clock (golden tests depend on this).
+var nowFunc = time.Now
 
 // relativeTime returns a human-readable relative time string ("2m ago", "just now").
 func relativeTime(t time.Time) string {
 	if t.IsZero() {
 		return "—"
 	}
-	diff := time.Since(t)
+	diff := nowFunc().Sub(t)
 	switch {
 	case diff < time.Minute:
 		return "ahora mismo"

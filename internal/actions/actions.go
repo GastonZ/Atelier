@@ -7,6 +7,10 @@ package actions
 type Opener interface {
 	OpenInClaudeCode(projectPath string) error
 	SpawnPowerShell(projectPath string) error
+	// OpenInVSCode opens the project in VS Code (or VS Code Insiders).
+	// Resolves the binary via: code → code-insiders → %LOCALAPPDATA% fallback.
+	// Returns an informative error if no VS Code installation is found.
+	OpenInVSCode(projectPath string) error
 }
 
 // Clipboard is the system clipboard write boundary.

@@ -6,9 +6,14 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gastonz/atelier/internal/actions"
 	"github.com/gastonz/atelier/internal/config"
+	"github.com/gastonz/atelier/internal/audio"
+	"github.com/gastonz/atelier/internal/engram"
+	"github.com/gastonz/atelier/internal/git"
+	"github.com/gastonz/atelier/internal/nowplaying"
 	"github.com/gastonz/atelier/internal/registry"
 	"github.com/gastonz/atelier/internal/transcripts"
 )
@@ -35,7 +40,22 @@ const (
 	ScreenAgentZoom
 	// ScreenAgentReplay shows step-by-step replay of a session's events.
 	ScreenAgentReplay
+	// ScreenMemoryBrowser shows engram observations for the selected project.
+	ScreenMemoryBrowser
+	// ScreenProjectHistory shows unified git+SDD history for the selected project.
+	ScreenProjectHistory
+	// ScreenDiskUsage shows disk usage breakdown (engram DB + claude projects).
+	ScreenDiskUsage
 )
+
+// HistoryEntry is one item in the unified git+SDD history list.
+// Source is "git" or "sdd"; Title is commit subject or archive title; Ref is hash or observation ID string.
+type HistoryEntry struct {
+	Source string    // "git" | "sdd"
+	Date   time.Time // git: %ad parsed; sdd: observation.Timestamp
+	Title  string    // git: commit subject; sdd: archive title
+	Ref    string    // git: hash; sdd: strconv.FormatInt(id, 10)
+}
 
 // Model holds ALL application state. No sub-models.
 // Every Update branch returns a NEW Model (value semantics — immutability).
@@ -53,6 +73,14 @@ type Model struct {
 	opener    actions.Opener
 	clipboard actions.Clipboard
 
+	// --- now-playing (welcome screen ambient widget) ---
+	nowPlaying   nowplaying.Provider // injected; nil = card never shown
+	currentTrack nowplaying.Track    // latest snapshot, refreshed by the ticker
+
+	// --- audio visualizer ---
+	audio     audio.Analyzer // injected; nil = static bars only
+	barLevels []float64      // latest live spectrum, refreshed by the anim ticker
+
 	// --- list section (ScreenProjects) ---
 	projects   []registry.Project // cached snapshot, refreshed on screen entry
 	list       list.Model         // bubbles/list, lazy-init on first WindowSizeMsg
@@ -60,7 +88,9 @@ type Model struct {
 
 	// --- selection (ScreenProjectActions, ScreenConfirmDelete) ---
 	SelectedID   string // exported for tests — UUID of project the action/delete targets
-	ActionCursor int    // exported for tests — 0=Claude Code, 1=PowerShell, 2=Copy Path
+	// ActionCursor range: 0-7.
+	// 0=Claude Code, 1=VS Code, 2=PowerShell, 3=Copy Path, 4=Memory, 5=History, 6=Disk, 7=Borrar
+	ActionCursor int
 
 	// --- add form (ScreenAddProject) ---
 	nameInput textinput.Model
@@ -94,6 +124,45 @@ type Model struct {
 	ReplayPaused bool                // exported for tests — mirror of replayCtrl.Paused()
 	ReplaySpeed  float64             // exported for tests — mirror of replayCtrl.Speed()
 	replayCtrl   *transcripts.Replay // authoritative replay state
+
+	// --- daily driver pack dependencies (injected via NewWithDailyPack) ---
+	engramClient    engram.Client    // injected; nil-safe: ops flash error when nil
+	gitStatusReader git.StatusReader // injected; nil-safe
+	gitLogReader    git.LogReader    // injected; nil-safe
+
+	// --- ScreenMemoryBrowser state ---
+	memoryEntries    []engram.Observation // loaded list for current tomo
+	memoryCursor     int                  // index for non-filtered nav
+	memoryViewing    *engram.Observation  // non-nil = detail viewport active
+	memoryFilterText string               // mirror of memoryList filter input
+	memoryLoading    bool                 // spinner while loadMemoryCmd in flight
+	memoryError      string               // error flash for memory ops
+	memoryList       list.Model           // bubbles/list with filtering enabled
+	memoryViewport   viewport.Model       // detail body scroll
+
+	// --- ScreenProjects extension ---
+	projectFilterText string              // mirror of ScreenProjects filter input
+	gitStatusCache    map[string]git.Status // keyed by tomo Path; no TTL; refresh on 'r'
+	gitStatusLoading  bool                  // while fan-out in flight
+
+	// --- ScreenProjectHistory state ---
+	historyEntries      []HistoryEntry  // merged + sorted (date desc; sdd below git on same date)
+	historyCursor       int             // index in entries when in list mode
+	historyViewingRef   string          // "" = list mode; commit hash or sdd id = detail mode
+	historyDetailBody   string          // git show output OR archive content for viewport
+	historyLoading      bool            // spinner while load in flight
+	historyDetailLoading bool           // spinner while detail load in flight
+	historyError        string          // error flash
+	historyList         list.Model      // bubbles/list for entries
+	historyViewport     viewport.Model  // detail scroll
+
+	// --- ScreenDiskUsage state ---
+	diskEngramBytes        int64             // ~/.engram/*.db* total
+	diskClaudeProjectsTotal int64            // ~/.claude/projects/ total
+	diskPerTomo            map[string]int64  // keyed by tomo ID; 0 = "Sin crónica"
+	diskCursor             int               // selected disk row
+	diskLoading            bool              // spinner while WalkDir in flight
+	diskError              string            // error flash
 }
 
 // New returns a Model wired with the production-or-mock dependencies.
@@ -144,9 +213,20 @@ func NewWithMonitor(
 }
 
 // Init is called by Bubble Tea on program start.
-// Returns nil — no initial commands needed.
+// When a now-playing provider is wired, it kicks off the ambient polling loop:
+// an immediate fetch plus a recurring tick. With no provider it returns nil.
 func (m Model) Init() tea.Cmd {
-	return nil
+	var cmds []tea.Cmd
+	if m.nowPlaying != nil {
+		cmds = append(cmds, loadNowPlayingCmd(m.nowPlaying), nowPlayingTickCmd())
+	}
+	if m.audio != nil {
+		cmds = append(cmds, animTickCmd())
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
 }
 
 // newProjectList constructs a bubbles/list.Model sized for the current terminal.
@@ -157,7 +237,10 @@ func newProjectList(width, height int, items []list.Item) list.Model {
 	l.SetShowTitle(false)
 	l.SetShowStatusBar(false)
 	l.SetShowHelp(false)
-	l.SetFilteringEnabled(false)
+	// T31: Enable filtering for '/' project search (R6.1).
+	// The filter-precedence guard in handleProjectsKeys ensures our esc/enter
+	// handler is bypassed when the list is in filter mode.
+	l.SetFilteringEnabled(true)
 	// NEUTERED — our handler owns q/esc. This prevents bubbles/list quit-hijack.
 	l.KeyMap.Quit = key.NewBinding()
 	l.KeyMap.ForceQuit = key.NewBinding()
@@ -166,18 +249,39 @@ func newProjectList(width, height int, items []list.Item) list.Model {
 
 // projectItem wraps registry.Project to satisfy the list.Item interface.
 type projectItem struct {
-	project registry.Project
+	project   registry.Project
+	indicator string // git status indicator (e.g. "✓", "M3", "?") — empty if not loaded
 }
 
 func (i projectItem) FilterValue() string { return i.project.Name }
-func (i projectItem) Title() string       { return i.project.Name }
+func (i projectItem) Title() string {
+	if i.indicator != "" {
+		return i.project.Name + "  " + i.indicator
+	}
+	return i.project.Name
+}
 func (i projectItem) Description() string { return i.project.Path }
 
-// projectsToItems converts a project slice to list.Item slice.
+// projectsToItems converts a project slice to list.Item slice (no git indicators).
 func projectsToItems(projects []registry.Project) []list.Item {
 	items := make([]list.Item, len(projects))
 	for i, p := range projects {
 		items[i] = projectItem{project: p}
+	}
+	return items
+}
+
+// projectsToItemsWithStatus converts a project slice to list.Item slice with git indicators.
+func projectsToItemsWithStatus(projects []registry.Project, cache map[string]git.Status) []list.Item {
+	items := make([]list.Item, len(projects))
+	for i, p := range projects {
+		indicator := ""
+		if cache != nil {
+			if s, ok := cache[p.Path]; ok {
+				indicator = git.FormatGitIndicator(s)
+			}
+		}
+		items[i] = projectItem{project: p, indicator: indicator}
 	}
 	return items
 }
@@ -292,6 +396,144 @@ func (m Model) callWatcherCancel() Model {
 	}
 	m.watcherCancelSet = true
 	m.watcherCancel = nil
+	return m
+}
+
+// --- Daily driver pack accessor/helpers (exported for tests) -----------------
+
+// GitStatusCache returns the current git status cache (exported for tests).
+func (m Model) GitStatusCache() map[string]git.Status { return m.gitStatusCache }
+
+// DiskLoaded returns true if the disk usage data has been loaded (exported for tests).
+func (m Model) DiskLoaded() bool { return m.diskLoading == false && m.diskEngramBytes > 0 || m.diskPerTomo != nil }
+
+// MemoryLoading returns true if memory is currently loading.
+func (m Model) MemoryLoading() bool { return m.memoryLoading }
+
+// MemoryEntries returns the loaded memory entries (exported for tests).
+func (m Model) MemoryEntries() []engram.Observation { return m.memoryEntries }
+
+// MemoryViewing returns the currently viewed observation, or nil.
+func (m Model) MemoryViewing() *engram.Observation { return m.memoryViewing }
+
+// HistoryEntries returns the loaded history entries (exported for tests).
+func (m Model) HistoryEntries() []HistoryEntry { return m.historyEntries }
+
+// HistoryViewingRef returns the current detail ref ("" = list mode).
+func (m Model) HistoryViewingRef() string { return m.historyViewingRef }
+
+// DiskEngramBytes returns the total engram DB bytes (exported for tests).
+func (m Model) DiskEngramBytes() int64 { return m.diskEngramBytes }
+
+// DiskCursor returns the disk usage screen cursor.
+func (m Model) DiskCursor() int { return m.diskCursor }
+
+// NewWithDailyPack returns a Model wired with the daily-driver-pack dependencies.
+// Extends NewWithMonitor with engram.Client, git.StatusReader, git.LogReader.
+func NewWithDailyPack(
+	reg registry.Registry,
+	op actions.Opener,
+	cb actions.Clipboard,
+	scanner transcripts.Scanner,
+	watcher transcripts.Watcher,
+	prices transcripts.PriceTable,
+	cfg config.AtelierConfig,
+	engramCl engram.Client,
+	statusR git.StatusReader,
+	logR git.LogReader,
+) Model {
+	m := NewWithMonitor(reg, op, cb, scanner, watcher, prices, cfg)
+	m.engramClient = engramCl
+	m.gitStatusReader = statusR
+	m.gitLogReader = logR
+	return m
+}
+
+// SetMemoryErrorForTest is a test helper to set memoryError.
+func SetMemoryErrorForTest(m Model, err string) Model {
+	m.memoryError = err
+	return m
+}
+
+// SetHistoryErrorForTest is a test helper to set historyError.
+func SetHistoryErrorForTest(m Model, err string) Model {
+	m.historyError = err
+	return m
+}
+
+// SetDiskErrorForTest is a test helper to set diskError.
+func SetDiskErrorForTest(m Model, err string) Model {
+	m.diskError = err
+	return m
+}
+
+// SetDiskLoadingForTest is a test helper to set diskLoading state.
+func SetDiskLoadingForTest(m Model, loading bool) Model {
+	m.diskLoading = loading
+	return m
+}
+
+// SetMemoryLoadingForTest is a test helper to set memoryLoading state.
+func SetMemoryLoadingForTest(m Model, loading bool) Model {
+	m.memoryLoading = loading
+	return m
+}
+
+// SetHistoryLoadingForTest is a test helper to set historyLoading state.
+func SetHistoryLoadingForTest(m Model, loading bool) Model {
+	m.historyLoading = loading
+	return m
+}
+
+// InjectDailyPackDeps is a test helper that injects daily-driver-pack dependencies
+// into an existing Model without requiring NewWithDailyPack (for retrofitting test models).
+func InjectDailyPackDeps(m Model, c engram.Client, sr git.StatusReader, lr git.LogReader) Model {
+	m.engramClient = c
+	m.gitStatusReader = sr
+	m.gitLogReader = lr
+	return m
+}
+
+// InjectNowPlaying returns a new Model with the now-playing provider set.
+// Used by the production wiring (RunWithDailyPack) and by tests.
+func InjectNowPlaying(m Model, p nowplaying.Provider) Model {
+	m.nowPlaying = p
+	return m
+}
+
+// CurrentTrack returns the latest now-playing snapshot (exported for tests).
+func (m Model) CurrentTrack() nowplaying.Track { return m.currentTrack }
+
+// SetCurrentTrackForTest sets the current track directly (test helper).
+func SetCurrentTrackForTest(m Model, t nowplaying.Track) Model {
+	m.currentTrack = t
+	return m
+}
+
+// InjectAudio returns a new Model with the audio analyzer set.
+func InjectAudio(m Model, a audio.Analyzer) Model {
+	m.audio = a
+	return m
+}
+
+// BarLevels returns the latest live spectrum levels (exported for tests).
+func (m Model) BarLevels() []float64 { return m.barLevels }
+
+// SetBarLevelsForTest sets the bar levels directly (test helper).
+func SetBarLevelsForTest(m Model, levels []float64) Model {
+	m.barLevels = levels
+	return m
+}
+
+// SetScreenForTest is a test helper to set the screen without navigation flow.
+func SetScreenForTest(m Model, s Screen) Model {
+	m.Screen = s
+	return m
+}
+
+// SetHistoryViewingRefForTest is a test helper to set historyViewingRef directly.
+func SetHistoryViewingRefForTest(m Model, ref string) Model {
+	m.historyViewingRef = ref
 	return m
 }
 

@@ -5,6 +5,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gastonz/atelier/internal/config"
+	"github.com/gastonz/atelier/internal/engram"
+	"github.com/gastonz/atelier/internal/git"
+	"github.com/gastonz/atelier/internal/nowplaying"
 	"github.com/gastonz/atelier/internal/registry"
 	"github.com/gastonz/atelier/internal/transcripts"
 )
@@ -71,6 +74,7 @@ func runCopyPathCmd(cb Clipboards, path string) tea.Cmd {
 type Openers interface {
 	OpenInClaudeCode(projectPath string) error
 	SpawnPowerShell(projectPath string) error
+	OpenInVSCode(projectPath string) error
 }
 
 // Clipboards is a local alias; mirrors actions.Clipboard.
@@ -131,6 +135,63 @@ type configLoadedMsg struct {
 
 // pollingTickMsg is dispatched by the polling ticker on each tick.
 type pollingTickMsg struct{}
+
+// nowPlayingInterval is how often the welcome screen refreshes the now-playing card.
+const nowPlayingInterval = 3 * time.Second
+
+// nowPlayingTickMsg is dispatched by the now-playing ticker on each tick.
+type nowPlayingTickMsg struct{}
+
+// nowPlayingLoadedMsg carries the latest now-playing snapshot.
+type nowPlayingLoadedMsg struct {
+	track nowplaying.Track
+	err   error
+}
+
+// MakeNowPlayingLoadedMsg constructs a nowPlayingLoadedMsg for tests.
+func MakeNowPlayingLoadedMsg(track nowplaying.Track, err error) tea.Msg {
+	return nowPlayingLoadedMsg{track: track, err: err}
+}
+
+// MakeNowPlayingTickMsg constructs a nowPlayingTickMsg for tests.
+func MakeNowPlayingTickMsg() tea.Msg {
+	return nowPlayingTickMsg{}
+}
+
+// nowPlayingTickCmd schedules a single now-playing tick.
+func nowPlayingTickCmd() tea.Cmd {
+	return tea.Tick(nowPlayingInterval, func(_ time.Time) tea.Msg {
+		return nowPlayingTickMsg{}
+	})
+}
+
+// animInterval drives the waveform animation (~15 fps).
+const animInterval = 66 * time.Millisecond
+
+// animTickMsg is dispatched by the waveform animation ticker on each frame.
+type animTickMsg struct{}
+
+// MakeAnimTickMsg constructs an animTickMsg for tests.
+func MakeAnimTickMsg() tea.Msg { return animTickMsg{} }
+
+// animTickCmd schedules a single animation frame tick.
+func animTickCmd() tea.Cmd {
+	return tea.Tick(animInterval, func(_ time.Time) tea.Msg {
+		return animTickMsg{}
+	})
+}
+
+// loadNowPlayingCmd queries the provider for the current track.
+// A nil provider yields an empty (not-present) track — never an error.
+func loadNowPlayingCmd(p nowplaying.Provider) tea.Cmd {
+	return func() tea.Msg {
+		if p == nil {
+			return nowPlayingLoadedMsg{track: nowplaying.Track{Present: false}}
+		}
+		t, err := p.Current()
+		return nowPlayingLoadedMsg{track: t, err: err}
+	}
+}
 
 // MakePollingTickMsg constructs a pollingTickMsg for tests.
 func MakePollingTickMsg() tea.Msg {
@@ -210,6 +271,93 @@ func replayTickCmd(speed float64) tea.Cmd {
 	return tea.Tick(interval, func(_ time.Time) tea.Msg {
 		return replayTickMsg{}
 	})
+}
+
+// ============================================================================
+// Daily driver pack messages
+// ============================================================================
+
+// memoryLoadedMsg is dispatched after loadMemoryCmd completes.
+type memoryLoadedMsg struct {
+	entries []engram.Observation
+	err     error
+}
+
+// MakeMemoryLoadedMsg constructs a memoryLoadedMsg for tests.
+func MakeMemoryLoadedMsg(entries []engram.Observation, err error) tea.Msg {
+	return memoryLoadedMsg{entries: entries, err: err}
+}
+
+// memoryDetailLoadedMsg is dispatched after loadMemoryDetailCmd completes.
+type memoryDetailLoadedMsg struct {
+	obs engram.Observation
+	err error
+}
+
+// MakeMemoryDetailLoadedMsg constructs a memoryDetailLoadedMsg for tests.
+func MakeMemoryDetailLoadedMsg(obs engram.Observation, err error) tea.Msg {
+	return memoryDetailLoadedMsg{obs: obs, err: err}
+}
+
+// historyLoadedMsg is dispatched after loadHistoryCmd completes.
+type historyLoadedMsg struct {
+	entries []HistoryEntry
+	err     error
+}
+
+// MakeHistoryLoadedMsg constructs a historyLoadedMsg for tests.
+func MakeHistoryLoadedMsg(entries []HistoryEntry, err error) tea.Msg {
+	return historyLoadedMsg{entries: entries, err: err}
+}
+
+// historyDetailLoadedMsg is dispatched after a history detail cmd completes.
+type historyDetailLoadedMsg struct {
+	body string
+	err  error
+}
+
+// MakeHistoryDetailLoadedMsg constructs a historyDetailLoadedMsg for tests.
+func MakeHistoryDetailLoadedMsg(body string, err error) tea.Msg {
+	return historyDetailLoadedMsg{body: body, err: err}
+}
+
+// gitStatusLoadedMsg is dispatched after the git status fan-out completes.
+type gitStatusLoadedMsg struct {
+	statuses map[string]git.Status // keyed by tomo.Path
+	err      error
+}
+
+// MakeGitStatusLoadedMsg constructs a gitStatusLoadedMsg for tests.
+func MakeGitStatusLoadedMsg(statuses map[string]git.Status, err error) tea.Msg {
+	return gitStatusLoadedMsg{statuses: statuses, err: err}
+}
+
+// diskUsageLoadedMsg is dispatched after loadDiskUsageCmd completes.
+type diskUsageLoadedMsg struct {
+	engramBytes int64
+	claudeBytes int64
+	perTomo     map[string]int64
+	err         error
+}
+
+// MakeDiskUsageLoadedMsg constructs a diskUsageLoadedMsg for tests.
+func MakeDiskUsageLoadedMsg(engramBytes, claudeBytes int64, perTomo map[string]int64, err error) tea.Msg {
+	return diskUsageLoadedMsg{engramBytes: engramBytes, claudeBytes: claudeBytes, perTomo: perTomo, err: err}
+}
+
+// runOpenVSCodeCmd executes OpenInVSCode and Touch(id) asynchronously.
+func runOpenVSCodeCmd(op Openers, reg registry.Registry, id, path string) tea.Cmd {
+	return func() tea.Msg {
+		err := op.OpenInVSCode(path)
+		if err != nil {
+			return actionDoneMsg{flash: CopyVSCodeMissing, err: err}
+		}
+		touchErr := reg.Touch(id)
+		if touchErr != nil {
+			return actionDoneMsg{flash: "Tomo abierto en VS Code (no se pudo registrar la lectura)", err: nil}
+		}
+		return actionDoneMsg{flash: "Tomo abierto en VS Code"}
+	}
 }
 
 // rootPathsOf extracts the root .jsonl paths from a slice of active sessions.

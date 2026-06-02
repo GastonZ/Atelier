@@ -39,8 +39,13 @@ type goldenTest struct {
 
 // TestGoldenViews runs all golden view scenarios.
 func TestGoldenViews(t *testing.T) {
-	// Fixed time for deterministic output
+	// Fixed time for deterministic output.
 	fixedNow := time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC)
+	// Pin relativeTime's clock to fixedNow so session timestamps render as
+	// "ahora mismo" regardless of the real date the suite runs on. Without this,
+	// relativeTime compares against the real wall clock and the golden output
+	// drifts ("29d", "31d", …) as time passes — a latent non-determinism bug.
+	defer tui.SetNowFuncForTest(func() time.Time { return fixedNow })()
 
 	tests := []goldenTest{
 		{

@@ -41,10 +41,21 @@ func (w *windowsOpener) SpawnPowerShellViaSeam(projectPath string) error {
 	return w.SpawnPowerShell(projectPath)
 }
 
+// OpenInVSCode opens the project in VS Code. Delegates to the vscode.go detection chain.
+func (w *windowsOpener) OpenInVSCode(projectPath string) error {
+	return openInVSCodeImpl(projectPath)
+}
+
+// OpenInVSCodeViaSeam is the testability entry point for OpenInVSCode.
+func (w *windowsOpener) OpenInVSCodeViaSeam(projectPath string) error {
+	return w.OpenInVSCode(projectPath)
+}
+
 // WindowsOpenerSeam is exported solely for testing so the external actions_test package
 // can swap execCommand and call the methods via type assertion.
 // Do NOT use this interface in production code — use Opener instead.
 type WindowsOpenerSeam interface {
 	OpenInClaudeCodeViaSeam(projectPath string) error
 	SpawnPowerShellViaSeam(projectPath string) error
+	OpenInVSCodeViaSeam(projectPath string) error // NEW
 }

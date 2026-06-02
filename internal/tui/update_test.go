@@ -526,10 +526,11 @@ func TestScreenProjectActions_EnterExecutesPowerShell(t *testing.T) {
 	m = tui.DrainProjectsLoaded(t, m)
 	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 
-	// Move cursor to PowerShell (index 1)
-	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-	if m.ActionCursor != 1 {
-		t.Fatalf("precondition: ActionCursor = %d, want 1", m.ActionCursor)
+	// Move cursor to PowerShell (now index 2: 0=Claude, 1=VSCode, 2=PowerShell)
+	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // → 1 (VS Code)
+	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // → 2 (PowerShell)
+	if m.ActionCursor != 2 {
+		t.Fatalf("precondition: ActionCursor = %d, want 2 (PowerShell)", m.ActionCursor)
 	}
 
 	m, cmd := dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
@@ -561,11 +562,12 @@ func TestScreenProjectActions_EnterExecutesCopyPath(t *testing.T) {
 	m = tui.DrainProjectsLoaded(t, m)
 	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 
-	// Move cursor to Copy Path (index 2)
-	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-	if m.ActionCursor != 2 {
-		t.Fatalf("precondition: ActionCursor = %d, want 2", m.ActionCursor)
+	// Move cursor to Copy Path (now index 3: 0=Claude, 1=VSCode, 2=PowerShell, 3=CopyPath)
+	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // → 1 (VS Code)
+	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // → 2 (PowerShell)
+	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // → 3 (Copy Path)
+	if m.ActionCursor != 3 {
+		t.Fatalf("precondition: ActionCursor = %d, want 3", m.ActionCursor)
 	}
 
 	m, cmd := dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})

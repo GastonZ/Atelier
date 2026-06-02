@@ -6,7 +6,9 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/gastonz/atelier/internal/disk"
 )
 
 // keyMap defines the global key bindings for the application.
@@ -47,6 +49,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleAgentZoomKeys(msg)
 	case ScreenAgentReplay:
 		return m.handleAgentReplayKeys(msg)
+	case ScreenMemoryBrowser:
+		return m.handleMemoryBrowserKeys(msg)
+	case ScreenProjectHistory:
+		return m.handleProjectHistoryKeys(msg)
+	case ScreenDiskUsage:
+		return m.handleDiskUsageKeys(msg)
 	}
 	return m, nil
 }
@@ -75,12 +83,21 @@ func (m Model) handleWelcomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // handleProjectsKeys handles key events on the project list screen.
 // IMPORTANT: our q/esc handler runs BEFORE delegating to m.list.Update to ensure
 // the (already-neutered) bubbles/list Quit binding never fires.
+// NEW (T31): '/' activates bubbles/list filter mode; 'r' refreshes git status cache.
+// Filter precedence guard: when list is Filtering, esc/enter go to list first.
 func (m Model) handleProjectsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// T31 filter precedence guard: when filtering, let list consume esc and enter.
+	if m.ListInited && m.list.FilterState() == list.Filtering {
+		var cmd tea.Cmd
+		m.list, cmd = m.list.Update(msg)
+		return m, cmd
+	}
+
 	switch {
 	case msg.Type == tea.KeyEsc || (msg.Type == tea.KeyRunes && string(msg.Runes) == "q"):
 		// q and esc both go to Welcome — NOT a quit (S2.4, S2.5, S6.2, S6.3)
 		m.Screen = ScreenWelcome
-		return m, nil
+		return m, m.maybeAnimTick() // resume waveform animation on welcome
 
 	case msg.Type == tea.KeyRunes && string(msg.Runes) == "m":
 		// m opens agent monitor from Projects screen (R7.2)
@@ -91,6 +108,15 @@ func (m Model) handleProjectsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.PrevScreen = ScreenProjects
 		m = m.resetAddForm()
 		m.Screen = ScreenAddProject
+		return m, nil
+
+	case msg.Type == tea.KeyRunes && string(msg.Runes) == "r":
+		// r refreshes git status cache (T31, R4.6 — cache invalidated on 'r')
+		m.gitStatusCache = nil
+		m.gitStatusLoading = true
+		if m.gitStatusReader != nil {
+			return m, loadGitStatusCmd(m.gitStatusReader, m.projects)
+		}
 		return m, nil
 
 	case msg.Type == tea.KeyRunes && string(msg.Runes) == "d":
@@ -118,6 +144,8 @@ func (m Model) handleProjectsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case msg.Type == tea.KeyEnter:
 		// Enter opens actions for the selected project (S2.1)
+		// When list filter is active and not-filtering state, let list handle enter
+		// so the filter-selected item gets used.
 		if len(m.projects) == 0 {
 			return m, nil
 		}
@@ -141,7 +169,7 @@ func (m Model) handleProjectsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Delegate navigation keys to the embedded list (j/k/arrows/pgdn/pgup)
+	// Delegate navigation keys to the embedded list (j/k/arrows/pgdn/pgup/filter-activation)
 	if m.ListInited {
 		var cmd tea.Cmd
 		m.list, cmd = m.list.Update(msg)
@@ -233,6 +261,8 @@ func (m Model) handleAddProjectKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleProjectActionsKeys handles key events on the project actions screen.
+// ActionCursor range: 0-7.
+// 0=Claude Code, 1=VS Code, 2=PowerShell, 3=Copy Path, 4=Memory, 5=History, 6=Disk, 7=Borrar
 func (m Model) handleProjectActionsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case msg.Type == tea.KeyEsc || (msg.Type == tea.KeyRunes && string(msg.Runes) == "q"):
@@ -243,7 +273,7 @@ func (m Model) handleProjectActionsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case msg.Type == tea.KeyRunes && string(msg.Runes) == "j":
 		fallthrough
 	case msg.Type == tea.KeyDown:
-		if m.ActionCursor < 2 {
+		if m.ActionCursor < 7 {
 			m.ActionCursor++
 		}
 		return m, nil
@@ -262,13 +292,208 @@ func (m Model) handleProjectActionsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch m.ActionCursor {
-		case 0: // Open in Claude Code
+		case 0: // Abrir en Claude Code (existing)
 			return m, runOpenClaudeCmd(m.opener, m.registry, proj.ID, proj.Path)
-		case 1: // Spawn PowerShell
+		case 1: // Abrir en VS Code (NEW)
+			return m, runOpenVSCodeCmd(m.opener, m.registry, proj.ID, proj.Path)
+		case 2: // Invocar PowerShell (was 1)
 			return m, runPowerShellCmd(m.opener, proj.Path)
-		case 2: // Copy path
+		case 3: // Copiar el sendero (was 2)
 			return m, runCopyPathCmd(m.clipboard, proj.Path)
+		case 4: // Ver memoria (NEW)
+			m.Screen = ScreenMemoryBrowser
+			proj := m.findProject(m.SelectedID)
+			m.memoryLoading = true
+			m.memoryEntries = nil
+			m.memoryViewing = nil
+			if m.engramClient != nil && proj != nil {
+				return m, loadMemoryCmd(m.engramClient, proj.Name)
+			}
+			return m, nil
+		case 5: // Ver historial (NEW)
+			m.Screen = ScreenProjectHistory
+			m.historyLoading = true
+			m.historyEntries = nil
+			m.historyViewingRef = ""
+			if proj != nil {
+				return m, loadHistoryCmd(m.engramClient, m.gitLogReader, proj.Name, proj.Path)
+			}
+			return m, nil
+		case 6: // Ver disco (NEW)
+			m.Screen = ScreenDiskUsage
+			m.diskLoading = true
+			return m, loadDiskUsageCmd(m.projects)
+		case 7: // Borrar (existing — was triggered from Projects with 'd', now also in menu)
+			if m.SelectedID == "" {
+				return m, nil
+			}
+			m.PrevScreen = ScreenProjectActions
+			m.Screen = ScreenConfirmDelete
+			return m, nil
 		}
+	}
+	return m, nil
+}
+
+// ============================================================================
+// Daily driver pack screen handlers
+// ============================================================================
+
+// handleProjectsKeys handles key events on the project list screen.
+// NOTE: This replaces the existing implementation — adds '/' filter + 'r' refresh.
+// The original function body is below; we insert the new cases BEFORE the list delegate.
+
+// handleMemoryBrowserKeys handles key events on ScreenMemoryBrowser.
+// Filter precedence: when list is Filtering, esc/enter are consumed by the list first.
+func (m Model) handleMemoryBrowserKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Filter precedence guard (design §4.5):
+	// When the list is in filter mode, let it consume esc (clear filter) and enter (apply).
+	if m.memoryList.FilterState() == list.Filtering {
+		var cmd tea.Cmd
+		m.memoryList, cmd = m.memoryList.Update(msg)
+		return m, cmd
+	}
+
+	// Detail mode — only esc matters.
+	if m.memoryViewing != nil {
+		if msg.Type == tea.KeyEsc {
+			m.memoryViewing = nil
+			return m, nil
+		}
+		// Delegate scroll keys to viewport.
+		var cmd tea.Cmd
+		m.memoryViewport, cmd = m.memoryViewport.Update(msg)
+		return m, cmd
+	}
+
+	// List mode (filter not active).
+	switch {
+	case msg.Type == tea.KeyEsc:
+		// Back to ScreenProjectActions.
+		m.Screen = ScreenProjectActions
+		// Clear filter state for next entry.
+		items := memoryObsToItems(m.memoryEntries)
+		if m.Width > 0 && m.Height > 0 {
+			listH := m.Height - 4
+			if listH < 1 {
+				listH = 1
+			}
+			m.memoryList = newMemoryList(m.Width, listH, items)
+		}
+		return m, nil
+
+	case msg.Type == tea.KeyEnter:
+		item := m.memoryList.SelectedItem()
+		if item == nil {
+			return m, nil
+		}
+		mi := item.(memoryItem)
+		// Load detail via cmd.
+		if m.engramClient != nil {
+			return m, loadMemoryDetailCmd(m.engramClient, mi.obs.ID)
+		}
+		return m, nil
+	}
+
+	// Delegate navigation + filter activation to list.
+	var cmd tea.Cmd
+	m.memoryList, cmd = m.memoryList.Update(msg)
+	return m, cmd
+}
+
+// handleProjectHistoryKeys handles key events on ScreenProjectHistory.
+func (m Model) handleProjectHistoryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Filter precedence guard.
+	if m.historyList.FilterState() == list.Filtering {
+		var cmd tea.Cmd
+		m.historyList, cmd = m.historyList.Update(msg)
+		return m, cmd
+	}
+
+	// Detail mode.
+	if m.historyViewingRef != "" {
+		if msg.Type == tea.KeyEsc {
+			m.historyViewingRef = ""
+			m.historyDetailBody = ""
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.historyViewport, cmd = m.historyViewport.Update(msg)
+		return m, cmd
+	}
+
+	// List mode.
+	switch {
+	case msg.Type == tea.KeyEsc:
+		m.Screen = ScreenProjectActions
+		return m, nil
+
+	case msg.Type == tea.KeyEnter:
+		item := m.historyList.SelectedItem()
+		if item == nil {
+			return m, nil
+		}
+		hi := item.(historyItem)
+		m.historyViewingRef = hi.entry.Ref
+		m.historyDetailLoading = true
+		proj := m.findProject(m.SelectedID)
+		repoPath := ""
+		if proj != nil {
+			repoPath = proj.Path
+		}
+		if hi.entry.Source == "git" {
+			return m, loadHistoryDetailGitCmd(m.gitLogReader, repoPath, hi.entry.Ref)
+		}
+		// SDD entry.
+		id, err := parseHistoryRef(hi.entry.Ref)
+		if err != nil {
+			m.historyError = "invalid SDD ref"
+			return m, nil
+		}
+		return m, loadHistoryDetailSDDCmd(m.engramClient, id)
+	}
+
+	// Delegate to list.
+	var cmd tea.Cmd
+	m.historyList, cmd = m.historyList.Update(msg)
+	return m, cmd
+}
+
+// handleDiskUsageKeys handles key events on ScreenDiskUsage.
+func (m Model) handleDiskUsageKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	rowCount := 2 + len(m.diskPerTomo) // engram + claude + per-tomo rows
+	if rowCount < 2 {
+		rowCount = 2
+	}
+
+	switch {
+	case msg.Type == tea.KeyEsc:
+		m.Screen = ScreenProjectActions
+		return m, nil
+
+	case msg.Type == tea.KeyRunes && string(msg.Runes) == "j":
+		fallthrough
+	case msg.Type == tea.KeyDown:
+		if m.diskCursor < rowCount-1 {
+			m.diskCursor++
+		}
+		return m, nil
+
+	case msg.Type == tea.KeyRunes && string(msg.Runes) == "k":
+		fallthrough
+	case msg.Type == tea.KeyUp:
+		if m.diskCursor > 0 {
+			m.diskCursor--
+		}
+		return m, nil
+
+	case msg.Type == tea.KeyEnter:
+		// Open in explorer for selected row.
+		path := m.diskRowPath()
+		if path != "" {
+			go func() { _ = disk.OpenInExplorer(path) }()
+		}
+		return m, nil
 	}
 	return m, nil
 }
@@ -339,6 +564,10 @@ func (m Model) enterAgentMonitor() (tea.Model, tea.Cmd) {
 func (m Model) leaveAgentMonitor() (tea.Model, tea.Cmd) {
 	m = m.callWatcherCancel()
 	m.Screen = m.PrevScreen
+	// Restart the waveform animation if we're landing back on the welcome screen.
+	if m.Screen == ScreenWelcome {
+		return m, m.maybeAnimTick()
+	}
 	return m, nil
 }
 
