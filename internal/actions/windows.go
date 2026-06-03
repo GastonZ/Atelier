@@ -1,6 +1,14 @@
+//go:build windows
+
 package actions
 
 import "os/exec"
+
+// newPlatformOpener returns the Windows-backed Opener. Selected at compile time
+// via the windows build constraint; see opener_other.go for the non-Windows stub.
+func newPlatformOpener() Opener {
+	return &windowsOpener{}
+}
 
 // execCommand is the testability seam for os/exec.Command.
 // Tests swap it via SetExecCommand to capture arguments without spawning real processes.

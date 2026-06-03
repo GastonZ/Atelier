@@ -19,11 +19,12 @@ type Clipboard interface {
 	WriteAll(text string) error
 }
 
-// NewOpener returns the platform-appropriate Opener.
-// Currently returns windowsOpener on all platforms.
-// TODO(cross-platform): Linux/macOS implementations land in a follow-up change.
+// NewOpener returns the platform-appropriate Opener. The concrete type is
+// resolved at compile time by newPlatformOpener: a real launcher on Windows
+// (windows.go) and a "not supported yet" stub elsewhere (opener_other.go).
+// TODO(cross-platform): real Linux/macOS launchers land in a follow-up change.
 func NewOpener() Opener {
-	return &windowsOpener{}
+	return newPlatformOpener()
 }
 
 // NewClipboard returns the production clipboard backed by github.com/atotto/clipboard.
