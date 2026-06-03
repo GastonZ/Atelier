@@ -5,6 +5,7 @@ package disk
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -38,9 +39,16 @@ func TestClaudeProjectsDirForPath_ExistingDir(t *testing.T) {
 		t.Skip("os.UserHomeDir() failed:", err)
 	}
 
-	// Build a synthetic tomo path and derive its expected key.
-	tomoPath := "C:\\Users\\Test\\myproject"
-	key := "c:-users-test-myproject"
+	// Build a synthetic tomo path and derive its key with the SAME transformation
+	// as ClaudeProjectsDirForPath (lowercase, then replace \, /, : with "-"). Using
+	// a real temp path keeps the derived directory-name filesystem-safe on every OS
+	// (a hardcoded "C:\..." key contains a colon, which is illegal in a Windows
+	// filename and made this test silently skip on Windows before).
+	tomoPath := filepath.Join(t.TempDir(), "myproject")
+	key := strings.ToLower(tomoPath)
+	key = strings.ReplaceAll(key, "\\", "-")
+	key = strings.ReplaceAll(key, "/", "-")
+	key = strings.ReplaceAll(key, ":", "-")
 	dir := filepath.Join(home, ".claude", "projects", key)
 
 	// Create the dir temporarily.

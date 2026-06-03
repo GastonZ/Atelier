@@ -4,19 +4,34 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
 
-// fakeOutputCmd returns a *exec.Cmd that outputs the given content via cmd.exe /c type.
-// This is Windows-compatible and avoids the Unix `cat` command.
+// fakeOutputCmd returns an *exec.Cmd that writes content to stdout. It is
+// cross-platform: cmd.exe /c type on Windows, cat elsewhere — so the exec seam
+// can be exercised on the full CI matrix, not just Windows.
 func fakeOutputCmd(t *testing.T, content string) *exec.Cmd {
 	t.Helper()
-	f := t.TempDir() + "\\out.txt"
+	f := filepath.Join(t.TempDir(), "out.txt")
 	if err := os.WriteFile(f, []byte(content), 0644); err != nil {
 		t.Fatalf("fakeOutputCmd: write: %v", err)
 	}
-	return exec.Command("cmd.exe", "/c", "type", f)
+	if runtime.GOOS == "windows" {
+		return exec.Command("cmd.exe", "/c", "type", f)
+	}
+	return exec.Command("cat", f)
+}
+
+// failCmd returns an *exec.Cmd that exits non-zero on any OS, used to simulate a
+// failed git invocation through the exec seam.
+func failCmd() *exec.Cmd {
+	if runtime.GOOS == "windows" {
+		return exec.Command("cmd.exe", "/c", "exit", "1")
+	}
+	return exec.Command("sh", "-c", "exit 1")
 }
 
 // ============================================================================
@@ -193,7 +208,7 @@ func TestShow_NonZeroExit(t *testing.T) {
 	defer func() { lookPath = origLP; resetAvailableCache() }()
 
 	SetExecCommand(func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("cmd.exe", "/c", "exit", "1")
+		return failCmd()
 	})
 	defer SetExecCommand(exec.Command)
 

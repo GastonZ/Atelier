@@ -1,7 +1,6 @@
 package git
 
 import (
-	"os"
 	"os/exec"
 	"testing"
 )
@@ -152,11 +151,7 @@ func TestStatusReader_CleanRepo(t *testing.T) {
 	// Inject canned clean repo output.
 	stdout := "## main...origin/main\n"
 	SetExecCommand(func(name string, arg ...string) *exec.Cmd {
-		f := t.TempDir() + "\\status.txt"
-		if err := os.WriteFile(f, []byte(stdout), 0644); err != nil {
-			return exec.Command("cmd.exe", "/c", "exit", "1")
-		}
-		return exec.Command("cmd.exe", "/c", "type", f)
+		return fakeOutputCmd(t, stdout)
 	})
 	defer SetExecCommand(exec.Command)
 
@@ -185,7 +180,7 @@ func TestStatusReader_NonZeroExit(t *testing.T) {
 	defer func() { lookPath = origLP; resetAvailableCache() }()
 
 	SetExecCommand(func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("cmd.exe", "/c", "exit", "1")
+		return failCmd()
 	})
 	defer SetExecCommand(exec.Command)
 
