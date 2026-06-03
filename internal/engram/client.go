@@ -21,8 +21,19 @@ type Client interface {
 	// ListSDDArchivesForProject returns non-deleted observations whose topic_key
 	// matches 'sdd/%/archive-report' for the given project, sorted created_at DESC.
 	ListSDDArchivesForProject(name string) ([]Observation, error)
+	// ListProjects returns the distinct project keys present in the store with
+	// their non-deleted observation counts, most populous first. Used by the
+	// project↔engram link picker so users map to real keys, not guesses.
+	ListProjects() ([]ProjectStat, error)
 	// Close releases the database connection.
 	Close() error
+}
+
+// ProjectStat is one distinct engram project key and how many non-deleted
+// observations it holds.
+type ProjectStat struct {
+	Key   string
+	Count int
 }
 
 // requiredColumns lists the columns the client needs present in the observations table.
@@ -98,10 +109,37 @@ func (c *sqliteClient) ListByProject(name string) ([]Observation, error) {
 	const q = `
 SELECT id, project, scope, type, title, content, topic_key, created_at
 FROM observations
-WHERE deleted_at IS NULL AND project = ?
+WHERE deleted_at IS NULL AND project = ? COLLATE NOCASE
 ORDER BY created_at DESC`
 
 	return c.queryObservations(q, name)
+}
+
+// ListProjects returns distinct project keys and their non-deleted counts,
+// most populous first.
+func (c *sqliteClient) ListProjects() ([]ProjectStat, error) {
+	const q = `
+SELECT project, COUNT(*) AS n
+FROM observations
+WHERE deleted_at IS NULL AND project IS NOT NULL AND project <> ''
+GROUP BY project
+ORDER BY n DESC, project ASC`
+
+	rows, err := c.retryQuery(q)
+	if err != nil {
+		return nil, fmt.Errorf("engram: ListProjects query: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []ProjectStat
+	for rows.Next() {
+		var s ProjectStat
+		if err := rows.Scan(&s.Key, &s.Count); err != nil {
+			return nil, fmt.Errorf("engram: ListProjects scan: %w", err)
+		}
+		stats = append(stats, s)
+	}
+	return stats, rows.Err()
 }
 
 // GetByID returns the full observation for id. Returns an error if not found.
@@ -133,7 +171,7 @@ func (c *sqliteClient) ListSDDArchivesForProject(name string) ([]Observation, er
 SELECT id, project, scope, type, title, content, topic_key, created_at
 FROM observations
 WHERE deleted_at IS NULL
-  AND project = ?
+  AND project = ? COLLATE NOCASE
   AND topic_key LIKE 'sdd/%'
   AND topic_key LIKE '%/archive-report'
 ORDER BY created_at DESC`

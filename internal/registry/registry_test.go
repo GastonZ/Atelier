@@ -222,6 +222,50 @@ func TestFileRegistry_TouchUpdatesLastOpenedAt(t *testing.T) {
 	}
 }
 
+// TestFileRegistry_SetEngramProject sets and clears the engram key, verifying persistence.
+func TestFileRegistry_SetEngramProject(t *testing.T) {
+	home := t.TempDir()
+	reg := newRegForTest(t, home, fixedTime, []string{"id-0001-0000-0000-0000-000000000001"})
+
+	proj, _ := reg.Add("Agencia Back", "/path/GZBackAgenciaV2")
+	if proj.EngramProject != "" {
+		t.Fatal("EngramProject should be empty after Add")
+	}
+
+	if err := reg.SetEngramProject(proj.ID, "GZBackAgenciaV2"); err != nil {
+		t.Fatalf("SetEngramProject() error: %v", err)
+	}
+	projects, _ := reg.List()
+	if projects[0].EngramProject != "GZBackAgenciaV2" {
+		t.Errorf("EngramProject = %q, want GZBackAgenciaV2", projects[0].EngramProject)
+	}
+
+	// Persisted to disk.
+	jsonPath := filepath.Join(home, ".atelier", "projects.json")
+	data, _ := os.ReadFile(jsonPath)
+	if !containsSubstring(string(data), "engram_project") {
+		t.Error("engram_project should be present in JSON after SetEngramProject")
+	}
+
+	// Clearing removes it (omitempty → absent in JSON).
+	if err := reg.SetEngramProject(proj.ID, ""); err != nil {
+		t.Fatalf("SetEngramProject(clear) error: %v", err)
+	}
+	projects, _ = reg.List()
+	if projects[0].EngramProject != "" {
+		t.Errorf("EngramProject after clear = %q, want empty", projects[0].EngramProject)
+	}
+}
+
+// TestFileRegistry_SetEngramProjectNotFound verifies ErrNotFound for unknown id.
+func TestFileRegistry_SetEngramProjectNotFound(t *testing.T) {
+	home := t.TempDir()
+	reg := newRegForTest(t, home, fixedTime, []string{})
+	if err := reg.SetEngramProject("nope", "x"); err == nil {
+		t.Fatal("SetEngramProject() should return error for unknown id")
+	}
+}
+
 // TestFileRegistry_TouchReturnsNotFoundForUnknownID verifies ErrNotFound sentinel on Touch.
 func TestFileRegistry_TouchReturnsNotFoundForUnknownID(t *testing.T) {
 	home := t.TempDir()

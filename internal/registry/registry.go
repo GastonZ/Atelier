@@ -20,11 +20,12 @@ const currentSchemaVersion = 1
 
 // Project is one entry in the user's project registry.
 type Project struct {
-	ID           string     `json:"id"`                        // UUID v4
-	Name         string     `json:"name"`                      // user-supplied, free-form
-	Path         string     `json:"path"`                      // native separators, as entered
-	CreatedAt    time.Time  `json:"created_at"`                // RFC3339 on disk
-	LastOpenedAt *time.Time `json:"last_opened_at,omitempty"` // nullable; absent in JSON when nil
+	ID            string     `json:"id"`                          // UUID v4
+	Name          string     `json:"name"`                        // user-supplied, free-form
+	Path          string     `json:"path"`                        // native separators, as entered
+	CreatedAt     time.Time  `json:"created_at"`                  // RFC3339 on disk
+	LastOpenedAt  *time.Time `json:"last_opened_at,omitempty"`    // nullable; absent in JSON when nil
+	EngramProject string     `json:"engram_project,omitempty"`    // explicit engram project key; empty = derive from path basename
 }
 
 // Store is the on-disk JSON envelope.
@@ -40,6 +41,9 @@ type Registry interface {
 	Add(name, path string) (Project, error)
 	Delete(id string) error
 	Touch(id string) error // sets LastOpenedAt to nowFn()
+	// SetEngramProject sets the explicit engram project key for a project
+	// (empty string clears it, falling back to the path-basename heuristic).
+	SetEngramProject(id, engramKey string) error
 }
 
 // fileRegistry is the JSON-file-backed Registry implementation.
@@ -159,6 +163,29 @@ func (r *fileRegistry) Touch(id string) error {
 	for i, p := range s.Projects {
 		if p.ID == id {
 			s.Projects[i].LastOpenedAt = &now
+			found = true
+			break
+		}
+	}
+	if !found {
+		return ErrNotFound
+	}
+
+	return r.save(s)
+}
+
+// SetEngramProject sets (or clears, when engramKey is empty) the explicit engram
+// project key for the project with the given id, then persists atomically.
+func (r *fileRegistry) SetEngramProject(id, engramKey string) error {
+	s, err := r.load()
+	if err != nil {
+		return err
+	}
+
+	found := false
+	for i, p := range s.Projects {
+		if p.ID == id {
+			s.Projects[i].EngramProject = engramKey
 			found = true
 			break
 		}

@@ -19,9 +19,17 @@ import (
 type mockEngramClientForTUI struct {
 	observations []engram.Observation
 	archives     []engram.Observation
+	projects     []engram.ProjectStat
 	byIDObs      engram.Observation
 	byIDErr      error
 	listErr      error
+}
+
+func (m *mockEngramClientForTUI) ListProjects() ([]engram.ProjectStat, error) {
+	if m.listErr != nil {
+		return nil, m.listErr
+	}
+	return m.projects, nil
 }
 
 func (m *mockEngramClientForTUI) ListByProject(_ string) ([]engram.Observation, error) {

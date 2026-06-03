@@ -50,6 +50,8 @@ const (
 	ScreenLaunchers
 	// ScreenLauncherForm shows the add/edit form for a single launcher.
 	ScreenLauncherForm
+	// ScreenMemoryLink shows the picker that maps a project to an engram project key.
+	ScreenMemoryLink
 )
 
 // HistoryEntry is one item in the unified git+SDD history list.
@@ -125,6 +127,13 @@ type Model struct {
 	launcherArgsInput  textinput.Model // form: space-separated args
 	launcherErr        string          // inline form validation error
 	configPath         string          // where launcher edits are persisted (injectable for tests)
+
+	// --- memory link picker (ScreenMemoryLink) ---
+	memoryLinkStats   []engram.ProjectStat // distinct engram keys + counts
+	MemoryLinkCursor  int                  // exported for tests — index into memoryLinkStats
+	memoryLinkLoading bool                 // engram project list in flight
+	memoryLinkProjID  string               // registry project being linked
+	memoryLinkErr     string               // load/persist error
 
 	// --- agent monitor state ---
 	agentSessions    []transcripts.Session // active sessions, sorted mtime-desc

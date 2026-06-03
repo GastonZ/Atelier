@@ -59,6 +59,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleLauncherKeys(msg)
 	case ScreenLauncherForm:
 		return m.handleLauncherFormKeys(msg)
+	case ScreenMemoryLink:
+		return m.handleMemoryLinkKeys(msg)
 	}
 	return m, nil
 }
@@ -320,15 +322,27 @@ func (m Model) handleProjectActionsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.memoryEntries = nil
 			m.memoryViewing = nil
 			if m.engramClient != nil {
-				return m, loadMemoryCmd(m.engramClient, proj.Name)
+				return m, loadMemoryCmd(m.engramClient, engramKeyFor(*proj))
 			}
 			return m, nil
+		case actionMemoryLink:
+			if m.engramClient == nil {
+				m.ActionFlash = "Engram no disponible (no se encontró la base)"
+				return m, nil
+			}
+			m.Screen = ScreenMemoryLink
+			m.memoryLinkProjID = proj.ID
+			m.memoryLinkLoading = true
+			m.memoryLinkStats = nil
+			m.memoryLinkErr = ""
+			m.MemoryLinkCursor = 0
+			return m, loadEngramProjectsCmd(m.engramClient)
 		case actionHistory:
 			m.Screen = ScreenProjectHistory
 			m.historyLoading = true
 			m.historyEntries = nil
 			m.historyViewingRef = ""
-			return m, loadHistoryCmd(m.engramClient, m.gitLogReader, proj.Name, proj.Path)
+			return m, loadHistoryCmd(m.engramClient, m.gitLogReader, engramKeyFor(*proj), proj.Path)
 		case actionDisk:
 			m.Screen = ScreenDiskUsage
 			m.diskLoading = true

@@ -43,6 +43,8 @@ func (m Model) View() string {
 		return m.viewLaunchers()
 	case ScreenLauncherForm:
 		return m.viewLauncherForm()
+	case ScreenMemoryLink:
+		return m.viewMemoryLink()
 	}
 	return ""
 }

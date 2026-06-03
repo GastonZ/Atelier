@@ -44,7 +44,7 @@ func TestScreenProjectActions_NewMenuOrderHandlersFireCorrectly(t *testing.T) {
 	}
 
 	base := len(config.DefaultLaunchers()) // launchers occupy indices [0, base)
-	maxIdx := base + 6                     // 7 fixed actions follow → last index
+	maxIdx := base + 7                     // 8 fixed actions follow → last index
 
 	navigateToActions := func() tui.Model {
 		m2 := tui.New(reg, mockOpener, mockClipboard)
@@ -162,7 +162,7 @@ func TestScreenProjectActions_NewMenuOrderHandlersFireCorrectly(t *testing.T) {
 	})
 
 	t.Run("History entry transitions to ScreenProjectHistory", func(t *testing.T) {
-		m2 := jumpTo(navigateToActions(), base+4)
+		m2 := jumpTo(navigateToActions(), base+5)
 		m2, _ = dispatchKey(t, m2, tea.KeyMsg{Type: tea.KeyEnter})
 		if m2.Screen != tui.ScreenProjectHistory {
 			t.Errorf("History: Screen = %v, want ScreenProjectHistory", m2.Screen)
@@ -170,7 +170,7 @@ func TestScreenProjectActions_NewMenuOrderHandlersFireCorrectly(t *testing.T) {
 	})
 
 	t.Run("Disk entry transitions to ScreenDiskUsage", func(t *testing.T) {
-		m2 := jumpTo(navigateToActions(), base+5)
+		m2 := jumpTo(navigateToActions(), base+6)
 		m2, _ = dispatchKey(t, m2, tea.KeyMsg{Type: tea.KeyEnter})
 		if m2.Screen != tui.ScreenDiskUsage {
 			t.Errorf("Disk: Screen = %v, want ScreenDiskUsage", m2.Screen)
@@ -178,7 +178,7 @@ func TestScreenProjectActions_NewMenuOrderHandlersFireCorrectly(t *testing.T) {
 	})
 
 	t.Run("Borrar entry transitions to ScreenConfirmDelete", func(t *testing.T) {
-		m2 := jumpTo(navigateToActions(), base+6)
+		m2 := jumpTo(navigateToActions(), base+7)
 		m2, _ = dispatchKey(t, m2, tea.KeyMsg{Type: tea.KeyEnter})
 		if m2.Screen != tui.ScreenConfirmDelete {
 			t.Errorf("Borrar: Screen = %v, want ScreenConfirmDelete", m2.Screen)

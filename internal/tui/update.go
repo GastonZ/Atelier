@@ -103,6 +103,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case diskUsageLoadedMsg:
 		return m.handleDiskUsageLoaded(msg)
 
+	case engramProjectsLoadedMsg:
+		return m.handleEngramProjectsLoaded(msg)
+
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}

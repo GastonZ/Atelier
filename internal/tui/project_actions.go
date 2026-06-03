@@ -15,6 +15,7 @@ const (
 	actionPowerShell
 	actionCopyPath
 	actionMemory
+	actionMemoryLink
 	actionHistory
 	actionDisk
 	actionDelete
@@ -58,6 +59,7 @@ func (m Model) buildProjectActions() []projectAction {
 		projectAction{label: "Invocar PowerShell", kind: actionPowerShell},
 		projectAction{label: "Copiar el sendero", kind: actionCopyPath},
 		projectAction{label: "Ver memoria", kind: actionMemory},
+		projectAction{label: "Vincular memoria (Engram)", kind: actionMemoryLink},
 		projectAction{label: "Ver historial", kind: actionHistory},
 		projectAction{label: "Ver disco", kind: actionDisk},
 		projectAction{label: "Borrar", kind: actionDelete},
