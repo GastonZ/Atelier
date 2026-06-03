@@ -55,6 +55,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleProjectHistoryKeys(msg)
 	case ScreenDiskUsage:
 		return m.handleDiskUsageKeys(msg)
+	case ScreenLaunchers:
+		return m.handleLauncherKeys(msg)
+	case ScreenLauncherForm:
+		return m.handleLauncherFormKeys(msg)
 	}
 	return m, nil
 }
@@ -73,6 +77,9 @@ func (m Model) handleWelcomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case msg.Type == tea.KeyRunes && string(msg.Runes) == "a":
 		// a opens agent monitor (R7.1)
 		return m.enterAgentMonitor()
+	case msg.Type == tea.KeyRunes && string(msg.Runes) == "l":
+		// l opens the agent-launcher manager
+		return m.enterLaunchers(), nil
 	case msg.Type == tea.KeyEsc:
 		// no-op on Welcome — S6.8
 		return m, nil

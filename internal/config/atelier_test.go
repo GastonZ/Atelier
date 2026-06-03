@@ -96,6 +96,38 @@ func TestLoadAtelierConfig_EmptyLaunchersList_Respected(t *testing.T) {
 	}
 }
 
+func TestSaveAtelierConfig_RoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sub", "config.yaml") // sub dir must be created
+
+	want := config.AtelierConfig{
+		ActiveWindowMinutes: 42,
+		PollingIntervalMs:   750,
+		Launchers: []config.Launcher{
+			{Label: "Claude Code", Command: "claude"},
+			{Label: "Aider", Command: "aider", Args: []string{"--no-auto-commits"}},
+		},
+	}
+
+	if err := config.SaveAtelierConfig(path, want); err != nil {
+		t.Fatalf("SaveAtelierConfig error = %v", err)
+	}
+
+	got, err := config.LoadAtelierConfig(path)
+	if err != nil {
+		t.Fatalf("LoadAtelierConfig error = %v", err)
+	}
+	if got.ActiveWindowMinutes != 42 || got.PollingIntervalMs != 750 {
+		t.Errorf("scalars round-trip = %d/%d, want 42/750", got.ActiveWindowMinutes, got.PollingIntervalMs)
+	}
+	if len(got.Launchers) != 2 {
+		t.Fatalf("Launchers count = %d, want 2", len(got.Launchers))
+	}
+	if got.Launchers[1].Command != "aider" || len(got.Launchers[1].Args) != 1 {
+		t.Errorf("second launcher = %+v, want aider with 1 arg", got.Launchers[1])
+	}
+}
+
 // --- LoadAtelierConfig ---
 
 func TestLoadAtelierConfig_MissingFile_UsesDefaults(t *testing.T) {

@@ -39,6 +39,10 @@ func (m Model) View() string {
 		return m.viewProjectHistory()
 	case ScreenDiskUsage:
 		return m.viewDiskUsage()
+	case ScreenLaunchers:
+		return m.viewLaunchers()
+	case ScreenLauncherForm:
+		return m.viewLauncherForm()
 	}
 	return ""
 }
@@ -61,6 +65,7 @@ func (m Model) renderFullWelcome() string {
 	subtitle := SubtitleStyle.Render("Mission Control for AI Workflows")
 	hint := HintStyle.Render("press q to quit")
 	enterHint := HintStyle.Render("presioná Enter para abrir tus tomos")
+	keysHint := HintStyle.Render("a: monitor de agentes  ·  l: gestionar lanzadores")
 
 	block := lipgloss.JoinVertical(
 		lipgloss.Center,
@@ -70,6 +75,7 @@ func (m Model) renderFullWelcome() string {
 		subtitle,
 		"",
 		enterHint,
+		keysHint,
 		hint,
 	)
 	canvas := lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center, block)

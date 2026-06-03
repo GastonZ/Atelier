@@ -21,7 +21,7 @@ import (
 type Launcher struct {
 	Label   string   `yaml:"label"`
 	Command string   `yaml:"command"`
-	Args    []string `yaml:"args"`
+	Args    []string `yaml:"args,omitempty"`
 }
 
 // AtelierConfig holds runtime knobs read from ~/.atelier/config.yaml.
@@ -132,4 +132,28 @@ func LoadAtelierConfig(path string) (AtelierConfig, error) {
 		result.Launchers = *raw.Launchers
 	}
 	return result, nil
+}
+
+// SaveAtelierConfig writes cfg to path as YAML, atomically (temp file + rename),
+// creating the parent directory if needed. This is what lets the TUI persist
+// in-app edits (e.g. the launcher manager). The whole config is serialized, so
+// any hand-written comments in an existing file are lost — an accepted trade-off
+// for editing from the UI.
+func SaveAtelierConfig(path string, cfg AtelierConfig) error {
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }

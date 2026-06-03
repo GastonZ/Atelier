@@ -46,6 +46,10 @@ const (
 	ScreenProjectHistory
 	// ScreenDiskUsage shows disk usage breakdown (engram DB + claude projects).
 	ScreenDiskUsage
+	// ScreenLaunchers shows the configurable agent-launcher manager (list).
+	ScreenLaunchers
+	// ScreenLauncherForm shows the add/edit form for a single launcher.
+	ScreenLauncherForm
 )
 
 // HistoryEntry is one item in the unified git+SDD history list.
@@ -111,6 +115,16 @@ type Model struct {
 	// (display-only greying). Defaults to actions.CommandAvailable in New;
 	// tests inject a deterministic stub.
 	launcherAvailable func(string) bool
+
+	// --- launcher manager (ScreenLaunchers / ScreenLauncherForm) ---
+	LauncherCursor     int             // exported for tests — index into atelierCfg.Launchers
+	launcherEditIndex  int             // index being edited; -1 when adding a new launcher
+	launcherFocus      int             // form field focus: 0=label, 1=command, 2=args
+	launcherLabelInput textinput.Model // form: display label
+	launcherCmdInput   textinput.Model // form: command (resolved on PATH)
+	launcherArgsInput  textinput.Model // form: space-separated args
+	launcherErr        string          // inline form validation error
+	configPath         string          // where launcher edits are persisted (injectable for tests)
 
 	// --- agent monitor state ---
 	agentSessions    []transcripts.Session // active sessions, sorted mtime-desc
@@ -185,16 +199,36 @@ func New(reg registry.Registry, op actions.Opener, cb actions.Clipboard) Model {
 	path.Prompt = "> "
 	path.CharLimit = 1024
 
+	lLabel := textinput.New()
+	lLabel.Placeholder = "Claude Code"
+	lLabel.Prompt = "> "
+	lLabel.CharLimit = 64
+
+	lCmd := textinput.New()
+	lCmd.Placeholder = "claude"
+	lCmd.Prompt = "> "
+	lCmd.CharLimit = 256
+
+	lArgs := textinput.New()
+	lArgs.Placeholder = "--flag valor   (opcional, separado por espacios)"
+	lArgs.Prompt = "> "
+	lArgs.CharLimit = 512
+
 	return Model{
-		Screen:            ScreenWelcome,
-		registry:          reg,
-		opener:            op,
-		clipboard:         cb,
-		nameInput:         name,
-		pathInput:         path,
-		AddFocus:          0,
-		atelierCfg:        config.DefaultAtelierConfig(),
-		launcherAvailable: actions.CommandAvailable,
+		Screen:             ScreenWelcome,
+		registry:           reg,
+		opener:             op,
+		clipboard:          cb,
+		nameInput:          name,
+		pathInput:          path,
+		AddFocus:           0,
+		atelierCfg:         config.DefaultAtelierConfig(),
+		launcherAvailable:  actions.CommandAvailable,
+		launcherLabelInput: lLabel,
+		launcherCmdInput:   lCmd,
+		launcherArgsInput:  lArgs,
+		launcherEditIndex:  -1,
+		configPath:         config.DefaultAtelierConfigPath(),
 	}
 }
 
@@ -343,6 +377,16 @@ func (m Model) resetAddForm() Model {
 // --- Test helper exports ---
 // These exported functions expose internal state for white-box testing.
 // They are NOT part of the public API and must only be used from _test.go files.
+
+// WithConfigPath sets where launcher edits are persisted. Test-only seam so the
+// launcher manager writes to a temp file instead of the real ~/.atelier/config.yaml.
+func WithConfigPath(m Model, path string) Model {
+	m.configPath = path
+	return m
+}
+
+// LauncherCount returns the number of configured launchers (test helper).
+func (m Model) LauncherCount() int { return len(m.atelierCfg.Launchers) }
 
 // NameInputValue returns the current value of the name input field.
 func (m Model) NameInputValue() string { return m.nameInput.Value() }
