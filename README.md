@@ -54,7 +54,8 @@ Catppuccin Mocha palette with custom dragon-brand accents, and a graceful text-o
 
 | Screen | Keys |
 |--------|------|
-| **Welcome** | `Enter` projects · `a` agent monitor · `q` quit |
+| **Welcome** | `Enter` projects · `a` agent monitor · `l` launcher manager · `q` quit |
+| **Launcher manager** | `j/k` navigate · `a` add · `e` edit · `d` delete · `J/K` reorder · `esc` back |
 | **Projects** | `↑/↓` `j/k` navigate · `/` search · `Enter` actions · `n` new · `d` delete · `r` refresh git status · `m` monitor · `esc` back |
 | **Project actions** | `j/k` navigate · `Enter` run · `esc` back |
 | **Agent monitor** | `j/k` navigate · `1–9` jump · `o/c` expand/collapse sub-agents · `Enter` zoom · `esc` back |
@@ -92,6 +93,11 @@ internal/
 Test coverage spans unit tests, mocked-dependency tests, and golden snapshot tests of the rendered TUI.
 
 ## Configuration
+
+> **Manage launchers without leaving the TUI.** Press `l` on the welcome screen to
+> open the launcher manager — add, edit, delete and reorder agent launchers right
+> there. Changes are saved to `~/.atelier/config.yaml` for you, so you never have
+> to find or hand-edit a config file. The YAML below is just what it writes.
 
 Dragon Atelier reads optional settings from `~/.atelier/config.yaml`. The file is
 entirely optional — every key falls back to a sensible default.
