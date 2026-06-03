@@ -39,7 +39,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
-        run: go build -trimpath -ldflags "-s -w" -o "${{ matrix.asset }}" ./cmd/atelier
+        run: go build -trimpath -ldflags "-s -w -X github.com/gastonz/atelier/internal/version.Version=${{ github.ref_name }}" -o "${{ matrix.asset }}" ./cmd/atelier
 
       - name: Publish to Release
         uses: softprops/action-gh-release@v2
