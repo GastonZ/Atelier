@@ -23,7 +23,7 @@ Everything below is built and working today — not a roadmap.
 Register every project once and launch it instantly. The list shows a live **git status indicator** per repo (clean / modified / untracked) and supports fuzzy `/` search.
 
 Per-project actions:
-- **Open in Claude Code** — launch a session in the project directory
+- **Launch any AI coding agent** — Claude Code, Codex, Gemini and more, each in the project directory. The launcher list is **configurable** (see [Configuration](#configuration)); uninstalled CLIs are marked `(no instalado)`.
 - **Open in VS Code**
 - **Open a PowerShell** rooted at the project
 - **Copy the path** to the clipboard
@@ -90,6 +90,31 @@ internal/
 ```
 
 Test coverage spans unit tests, mocked-dependency tests, and golden snapshot tests of the rendered TUI.
+
+## Configuration
+
+Dragon Atelier reads optional settings from `~/.atelier/config.yaml`. The file is
+entirely optional — every key falls back to a sensible default.
+
+```yaml
+# How recent (minutes) a session's last activity must be to count as "active".
+active_window_minutes: 15
+# Fallback polling interval (ms) for the agent monitor.
+polling_interval_ms: 500
+
+# Agent launchers shown at the top of the per-project actions menu. Each entry is
+# spawned, detached, in the project directory. Omit this key to keep the defaults
+# (Claude Code, Codex, Gemini); set it to fully customise; set it to [] to clear.
+launchers:
+  - { label: "Claude Code", command: "claude" }
+  - { label: "Codex",       command: "codex" }
+  - { label: "Gemini",      command: "gemini" }
+  - { label: "Aider",       command: "aider", args: ["--no-auto-commits"] }
+```
+
+`command` is resolved on your `PATH`; `args` (optional) are passed verbatim after
+it, so CLIs that need a subcommand or flag just work. Adding a new tool is a YAML
+edit — no rebuild.
 
 ## Install
 
