@@ -28,6 +28,7 @@ Per-project actions:
 - **Open a PowerShell** rooted at the project
 - **Copy the path** to the clipboard
 - Jump straight into the project's **memory**, **history**, or **disk** views
+- **Link the project to its Engram memory** — pick the real Engram project key from a list (with observation counts) so "Ver memoria" shows the right data even when the folder name and the Engram key differ
 
 ### 🛰️ Agent Monitor — the war room
 A live tile grid of your active Claude Code sessions, refreshed by a filesystem watcher:
@@ -62,6 +63,7 @@ Catppuccin Mocha palette with custom dragon-brand accents, and a graceful text-o
 | **Agent zoom** | `r` replay · `esc` back |
 | **Replay** | `space` pause/resume · `+/-` speed · `>/<` step · `esc` back |
 | **Memory / History** | `j/k` navigate · `/` filter · `Enter` open detail · `esc` back |
+| **Memory link (Engram)** | `j/k` navigate · `Enter` link the chosen key · `esc` back |
 | **Disk usage** | `j/k` navigate · `Enter` open in explorer · `esc` back |
 
 `Ctrl+C` quits from anywhere.
