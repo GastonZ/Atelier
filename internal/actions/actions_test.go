@@ -1,6 +1,7 @@
 package actions_test
 
 import (
+	"os/exec"
 	"testing"
 
 	"github.com/gastonz/atelier/internal/actions"
@@ -12,6 +13,26 @@ import (
 func TestNewOpener_NotNil(t *testing.T) {
 	if actions.NewOpener() == nil {
 		t.Fatal("NewOpener() returned nil")
+	}
+}
+
+// TestCommandAvailable verifies PATH resolution via the injectable seam.
+func TestCommandAvailable(t *testing.T) {
+	defer actions.SetLauncherLookPath(exec.LookPath)
+
+	// Empty command is never available (short-circuits before lookup).
+	if actions.CommandAvailable("") {
+		t.Error("CommandAvailable(\"\") = true, want false")
+	}
+
+	actions.SetLauncherLookPath(func(string) (string, error) { return "/usr/bin/claude", nil })
+	if !actions.CommandAvailable("claude") {
+		t.Error("CommandAvailable(found) = false, want true")
+	}
+
+	actions.SetLauncherLookPath(func(string) (string, error) { return "", exec.ErrNotFound })
+	if actions.CommandAvailable("nope") {
+		t.Error("CommandAvailable(not found) = true, want false")
 	}
 }
 

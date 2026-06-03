@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/gastonz/atelier/internal/config"
 	"github.com/gastonz/atelier/internal/engram"
 	"github.com/gastonz/atelier/internal/git"
 	"github.com/gastonz/atelier/internal/tui"
@@ -28,8 +29,9 @@ func newTestModelWithDailyPack(t *testing.T, eng *mockEngramClientForTUI, sr *mo
 // T33: ScreenProjectActions reshuffle regression test
 // ============================================================================
 
-// TestScreenProjectActions_NewMenuOrderHandlersFireCorrectly exercises all 8 indices.
-// This is the CRITICAL T33 regression test per the T33 protocol.
+// TestScreenProjectActions_NewMenuOrderHandlersFireCorrectly exercises the
+// data-driven menu: configurable launchers first, then the fixed actions. Indices
+// are derived from config.DefaultLaunchers() so the test survives default changes.
 func TestScreenProjectActions_NewMenuOrderHandlersFireCorrectly(t *testing.T) {
 	reg := newTestRegistry(t)
 	proj, _ := reg.Add("TestProject", t.TempDir())
@@ -41,40 +43,9 @@ func TestScreenProjectActions_NewMenuOrderHandlersFireCorrectly(t *testing.T) {
 		},
 	}
 
-	m := tui.New(reg, mockOpener, mockClipboard)
-	m = tui.InjectDailyPackDeps(m, mockEng, nil, nil)
+	base := len(config.DefaultLaunchers()) // launchers occupy indices [0, base)
+	maxIdx := base + 6                     // 7 fixed actions follow → last index
 
-	// Navigate to ScreenProjectActions.
-	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyEnter}) // Welcome → Projects
-	m, _ = dispatchKey(t, m, tea.WindowSizeMsg{Width: 80, Height: 24})
-	m = tui.DrainProjectsLoaded(t, m)
-	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyEnter}) // → ProjectActions
-	if m.Screen != tui.ScreenProjectActions {
-		t.Fatalf("precondition: Screen = %v, want ScreenProjectActions", m.Screen)
-	}
-	if m.ActionCursor != 0 {
-		t.Fatalf("precondition: ActionCursor = %d, want 0", m.ActionCursor)
-	}
-
-	// Verify j navigation covers full range 0 → 7.
-	for want := 1; want <= 7; want++ {
-		m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-		if m.ActionCursor != want {
-			t.Errorf("j iteration %d: ActionCursor = %d, want %d", want, m.ActionCursor, want)
-		}
-	}
-	// One more j should NOT advance beyond 7.
-	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-	if m.ActionCursor != 7 {
-		t.Errorf("j past max: ActionCursor = %d, want 7 (should clamp)", m.ActionCursor)
-	}
-	// k from 7 → 6.
-	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
-	if m.ActionCursor != 6 {
-		t.Errorf("k from 7: ActionCursor = %d, want 6", m.ActionCursor)
-	}
-
-	// Re-navigate to ScreenProjectActions for action handler tests.
 	navigateToActions := func() tui.Model {
 		m2 := tui.New(reg, mockOpener, mockClipboard)
 		m2 = tui.InjectDailyPackDeps(m2, mockEng, nil, nil)
@@ -84,53 +55,82 @@ func TestScreenProjectActions_NewMenuOrderHandlersFireCorrectly(t *testing.T) {
 		m2, _ = dispatchKey(t, m2, tea.KeyMsg{Type: tea.KeyEnter})
 		return m2
 	}
+	jumpTo := func(m2 tui.Model, idx int) tui.Model {
+		for i := 0; i < idx; i++ {
+			m2, _ = dispatchKey(t, m2, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+		}
+		return m2
+	}
 
-	t.Run("index 0 triggers OpenInClaudeCode", func(t *testing.T) {
+	// Navigation covers the full range and clamps at the bottom.
+	m := navigateToActions()
+	if m.Screen != tui.ScreenProjectActions {
+		t.Fatalf("precondition: Screen = %v, want ScreenProjectActions", m.Screen)
+	}
+	if m.ActionCursor != 0 {
+		t.Fatalf("precondition: ActionCursor = %d, want 0", m.ActionCursor)
+	}
+	for want := 1; want <= maxIdx; want++ {
+		m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+		if m.ActionCursor != want {
+			t.Errorf("j iteration %d: ActionCursor = %d, want %d", want, m.ActionCursor, want)
+		}
+	}
+	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	if m.ActionCursor != maxIdx {
+		t.Errorf("j past max: ActionCursor = %d, want %d (should clamp)", m.ActionCursor, maxIdx)
+	}
+	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	if m.ActionCursor != maxIdx-1 {
+		t.Errorf("k from max: ActionCursor = %d, want %d", m.ActionCursor, maxIdx-1)
+	}
+
+	t.Run("index 0 launches the first configured agent via LaunchInDir", func(t *testing.T) {
 		m2 := navigateToActions()
-		mockOpener.OpenInClaudeCodeCalls = nil
+		mockOpener.LaunchInDirCalls = nil
 		m2, cmd := dispatchKey(t, m2, tea.KeyMsg{Type: tea.KeyEnter})
 		if cmd != nil {
 			result, _ := m2.Update(cmd())
 			m2 = result.(tui.Model)
 		}
-		if len(mockOpener.OpenInClaudeCodeCalls) == 0 {
-			t.Error("index 0: OpenInClaudeCode not called")
+		if len(mockOpener.LaunchInDirCalls) == 0 {
+			t.Fatal("index 0: LaunchInDir not called")
+		}
+		if got, want := mockOpener.LaunchInDirCalls[0].Command, config.DefaultLaunchers()[0].Command; got != want {
+			t.Errorf("index 0: launched %q, want %q", got, want)
 		}
 		_ = m2
 	})
 
-	t.Run("index 1 triggers OpenInVSCode", func(t *testing.T) {
-		m2 := navigateToActions()
+	t.Run("VS Code entry triggers OpenInVSCode", func(t *testing.T) {
+		m2 := jumpTo(navigateToActions(), base)
 		mockOpener.OpenInVSCodeCalls = nil
-		m2, _ = dispatchKey(t, m2, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // → 1
 		m2, cmd := dispatchKey(t, m2, tea.KeyMsg{Type: tea.KeyEnter})
 		if cmd != nil {
 			result, _ := m2.Update(cmd())
 			m2 = result.(tui.Model)
 		}
 		if len(mockOpener.OpenInVSCodeCalls) == 0 {
-			t.Error("index 1: OpenInVSCode not called")
+			t.Error("VS Code entry: OpenInVSCode not called")
 		}
 		_ = m2
 	})
 
-	t.Run("index 2 triggers SpawnPowerShell", func(t *testing.T) {
-		m2 := navigateToActions()
+	t.Run("PowerShell entry triggers SpawnPowerShell", func(t *testing.T) {
+		m2 := jumpTo(navigateToActions(), base+1)
 		mockOpener.SpawnPowerShellCalls = nil
-		m2, _ = dispatchKey(t, m2, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // → 1
-		m2, _ = dispatchKey(t, m2, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // → 2
 		m2, cmd := dispatchKey(t, m2, tea.KeyMsg{Type: tea.KeyEnter})
 		if cmd != nil {
 			result, _ := m2.Update(cmd())
 			m2 = result.(tui.Model)
 		}
 		if len(mockOpener.SpawnPowerShellCalls) == 0 {
-			t.Error("index 2: SpawnPowerShell not called")
+			t.Error("PowerShell entry: SpawnPowerShell not called")
 		}
 		_ = m2
 	})
 
-	t.Run("index 3 triggers clipboard copy", func(t *testing.T) {
+	t.Run("Copy path entry triggers clipboard copy", func(t *testing.T) {
 		mockCb := &MockClipboard{}
 		m2 := tui.New(reg, mockOpener, mockCb)
 		m2 = tui.InjectDailyPackDeps(m2, mockEng, nil, nil)
@@ -138,76 +138,50 @@ func TestScreenProjectActions_NewMenuOrderHandlersFireCorrectly(t *testing.T) {
 		m2, _ = dispatchKey(t, m2, tea.WindowSizeMsg{Width: 80, Height: 24})
 		m2 = tui.DrainProjectsLoaded(t, m2)
 		m2, _ = dispatchKey(t, m2, tea.KeyMsg{Type: tea.KeyEnter})
-		m2, _ = dispatchKey(t, m2, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // → 1
-		m2, _ = dispatchKey(t, m2, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // → 2
-		m2, _ = dispatchKey(t, m2, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // → 3
+		m2 = jumpTo(m2, base+2)
 		m2, cmd := dispatchKey(t, m2, tea.KeyMsg{Type: tea.KeyEnter})
 		if cmd != nil {
 			result, _ := m2.Update(cmd())
 			m2 = result.(tui.Model)
 		}
 		if len(mockCb.Writes) == 0 {
-			t.Error("index 3: clipboard.WriteAll not called")
+			t.Error("Copy path entry: clipboard.WriteAll not called")
 		}
 		if len(mockCb.Writes) > 0 && mockCb.Writes[0] != proj.Path {
-			t.Errorf("index 3: wrote %q, want %q", mockCb.Writes[0], proj.Path)
+			t.Errorf("Copy path: wrote %q, want %q", mockCb.Writes[0], proj.Path)
 		}
 		_ = m2
 	})
 
-	t.Run("index 4 transitions to ScreenMemoryBrowser", func(t *testing.T) {
-		m2 := navigateToActions()
-		for i := 0; i < 4; i++ {
-			m2, _ = dispatchKey(t, m2, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-		}
-		if m2.ActionCursor != 4 {
-			t.Fatalf("precondition: ActionCursor = %d, want 4", m2.ActionCursor)
-		}
+	t.Run("Memory entry transitions to ScreenMemoryBrowser", func(t *testing.T) {
+		m2 := jumpTo(navigateToActions(), base+3)
 		m2, _ = dispatchKey(t, m2, tea.KeyMsg{Type: tea.KeyEnter})
 		if m2.Screen != tui.ScreenMemoryBrowser {
-			t.Errorf("index 4: Screen = %v, want ScreenMemoryBrowser", m2.Screen)
+			t.Errorf("Memory: Screen = %v, want ScreenMemoryBrowser", m2.Screen)
 		}
 	})
 
-	t.Run("index 5 transitions to ScreenProjectHistory", func(t *testing.T) {
-		m2 := navigateToActions()
-		for i := 0; i < 5; i++ {
-			m2, _ = dispatchKey(t, m2, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-		}
-		if m2.ActionCursor != 5 {
-			t.Fatalf("precondition: ActionCursor = %d, want 5", m2.ActionCursor)
-		}
+	t.Run("History entry transitions to ScreenProjectHistory", func(t *testing.T) {
+		m2 := jumpTo(navigateToActions(), base+4)
 		m2, _ = dispatchKey(t, m2, tea.KeyMsg{Type: tea.KeyEnter})
 		if m2.Screen != tui.ScreenProjectHistory {
-			t.Errorf("index 5: Screen = %v, want ScreenProjectHistory", m2.Screen)
+			t.Errorf("History: Screen = %v, want ScreenProjectHistory", m2.Screen)
 		}
 	})
 
-	t.Run("index 6 transitions to ScreenDiskUsage", func(t *testing.T) {
-		m2 := navigateToActions()
-		for i := 0; i < 6; i++ {
-			m2, _ = dispatchKey(t, m2, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-		}
-		if m2.ActionCursor != 6 {
-			t.Fatalf("precondition: ActionCursor = %d, want 6", m2.ActionCursor)
-		}
+	t.Run("Disk entry transitions to ScreenDiskUsage", func(t *testing.T) {
+		m2 := jumpTo(navigateToActions(), base+5)
 		m2, _ = dispatchKey(t, m2, tea.KeyMsg{Type: tea.KeyEnter})
 		if m2.Screen != tui.ScreenDiskUsage {
-			t.Errorf("index 6: Screen = %v, want ScreenDiskUsage", m2.Screen)
+			t.Errorf("Disk: Screen = %v, want ScreenDiskUsage", m2.Screen)
 		}
 	})
 
-	t.Run("index 7 (Borrar) transitions to ScreenConfirmDelete", func(t *testing.T) {
-		m2 := navigateToActions()
-		for i := 0; i < 7; i++ {
-			m2, _ = dispatchKey(t, m2, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-		}
-		if m2.ActionCursor != 7 {
-			t.Fatalf("precondition: ActionCursor = %d, want 7", m2.ActionCursor)
-		}
+	t.Run("Borrar entry transitions to ScreenConfirmDelete", func(t *testing.T) {
+		m2 := jumpTo(navigateToActions(), base+6)
 		m2, _ = dispatchKey(t, m2, tea.KeyMsg{Type: tea.KeyEnter})
 		if m2.Screen != tui.ScreenConfirmDelete {
-			t.Errorf("index 7: Screen = %v, want ScreenConfirmDelete", m2.Screen)
+			t.Errorf("Borrar: Screen = %v, want ScreenConfirmDelete", m2.Screen)
 		}
 	})
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/gastonz/atelier/internal/config"
 	"github.com/gastonz/atelier/internal/registry"
 	"github.com/gastonz/atelier/internal/tui"
 )
@@ -480,8 +481,9 @@ func TestScreenProjectActions_JKMovesActionCursor(t *testing.T) {
 	}
 }
 
-// TestScreenProjectActions_EnterExecutesOpenInClaude covers S4.5.
-func TestScreenProjectActions_EnterExecutesOpenInClaude(t *testing.T) {
+// TestScreenProjectActions_EnterExecutesLaunchAgent covers S4.5: the first menu
+// entry launches the first configured agent (default: Claude Code) via LaunchInDir.
+func TestScreenProjectActions_EnterExecutesLaunchAgent(t *testing.T) {
 	reg := newTestRegistry(t)
 	p, _ := reg.Add("TestProject", t.TempDir())
 	mockOpener := &MockOpener{}
@@ -493,7 +495,7 @@ func TestScreenProjectActions_EnterExecutesOpenInClaude(t *testing.T) {
 	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 
 	if m.ActionCursor != 0 {
-		t.Fatalf("precondition: ActionCursor = %d, want 0 (OpenInClaude)", m.ActionCursor)
+		t.Fatalf("precondition: ActionCursor = %d, want 0 (first launcher)", m.ActionCursor)
 	}
 
 	m, cmd := dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
@@ -503,14 +505,17 @@ func TestScreenProjectActions_EnterExecutesOpenInClaude(t *testing.T) {
 		m = result.(tui.Model)
 	}
 
-	if len(mockOpener.OpenInClaudeCodeCalls) == 0 {
-		t.Fatal("OpenInClaudeCode was not called")
+	if len(mockOpener.LaunchInDirCalls) == 0 {
+		t.Fatal("LaunchInDir was not called")
 	}
-	if mockOpener.OpenInClaudeCodeCalls[0] != p.Path {
-		t.Errorf("OpenInClaudeCode path = %q, want %q", mockOpener.OpenInClaudeCodeCalls[0], p.Path)
+	if mockOpener.LaunchInDirCalls[0].Path != p.Path {
+		t.Errorf("LaunchInDir path = %q, want %q", mockOpener.LaunchInDirCalls[0].Path, p.Path)
+	}
+	if got, want := mockOpener.LaunchInDirCalls[0].Command, config.DefaultLaunchers()[0].Command; got != want {
+		t.Errorf("LaunchInDir command = %q, want %q", got, want)
 	}
 	if m.Screen != tui.ScreenProjects {
-		t.Errorf("after OpenInClaude: Screen = %v, want ScreenProjects", m.Screen)
+		t.Errorf("after launch: Screen = %v, want ScreenProjects", m.Screen)
 	}
 }
 
@@ -526,11 +531,14 @@ func TestScreenProjectActions_EnterExecutesPowerShell(t *testing.T) {
 	m = tui.DrainProjectsLoaded(t, m)
 	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 
-	// Move cursor to PowerShell (now index 2: 0=Claude, 1=VSCode, 2=PowerShell)
-	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // → 1 (VS Code)
-	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // → 2 (PowerShell)
-	if m.ActionCursor != 2 {
-		t.Fatalf("precondition: ActionCursor = %d, want 2 (PowerShell)", m.ActionCursor)
+	// Move cursor to PowerShell: launchers come first, then VS Code (base), then
+	// PowerShell (base+1).
+	base := len(config.DefaultLaunchers())
+	for i := 0; i < base+1; i++ {
+		m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	}
+	if m.ActionCursor != base+1 {
+		t.Fatalf("precondition: ActionCursor = %d, want %d (PowerShell)", m.ActionCursor, base+1)
 	}
 
 	m, cmd := dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
@@ -562,12 +570,14 @@ func TestScreenProjectActions_EnterExecutesCopyPath(t *testing.T) {
 	m = tui.DrainProjectsLoaded(t, m)
 	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 
-	// Move cursor to Copy Path (now index 3: 0=Claude, 1=VSCode, 2=PowerShell, 3=CopyPath)
-	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // → 1 (VS Code)
-	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // → 2 (PowerShell)
-	m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // → 3 (Copy Path)
-	if m.ActionCursor != 3 {
-		t.Fatalf("precondition: ActionCursor = %d, want 3", m.ActionCursor)
+	// Move cursor to Copy Path: launchers, then VS Code (base), PowerShell (base+1),
+	// Copy Path (base+2).
+	base := len(config.DefaultLaunchers())
+	for i := 0; i < base+2; i++ {
+		m, _ = dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	}
+	if m.ActionCursor != base+2 {
+		t.Fatalf("precondition: ActionCursor = %d, want %d", m.ActionCursor, base+2)
 	}
 
 	m, cmd := dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})

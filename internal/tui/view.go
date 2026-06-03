@@ -185,23 +185,18 @@ func (m Model) viewProjectActions() string {
 	title := TitleBarStyle.Render("=== " + projectName + " ===")
 	pathLine := SubtitleStyle.Render("  " + projectPath)
 
-	actions := []string{
-		"Abrir en Claude Code", // 0
-		"Abrir en VS Code",     // 1 (NEW)
-		"Invocar PowerShell",   // 2 (was 1)
-		"Copiar el sendero",    // 3 (was 2)
-		"Ver memoria",          // 4 (NEW)
-		"Ver historial",        // 5 (NEW)
-		"Ver disco",            // 6 (NEW)
-		"Borrar",               // 7 (existing, destructive last)
-	}
+	actions := m.buildProjectActions()
 
 	var actionLines []string
 	for i, a := range actions {
+		label := a.label
+		if a.kind == actionLauncher && !a.available {
+			label += " (no instalado)"
+		}
 		if i == m.ActionCursor {
-			actionLines = append(actionLines, SelectedRowStyle.Render("  [*] "+a))
+			actionLines = append(actionLines, SelectedRowStyle.Render("  [*] "+label))
 		} else {
-			actionLines = append(actionLines, "  [ ] "+a)
+			actionLines = append(actionLines, "  [ ] "+label)
 		}
 	}
 

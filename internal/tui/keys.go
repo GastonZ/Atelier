@@ -261,9 +261,12 @@ func (m Model) handleAddProjectKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleProjectActionsKeys handles key events on the project actions screen.
-// ActionCursor range: 0-7.
-// 0=Claude Code, 1=VS Code, 2=PowerShell, 3=Copy Path, 4=Memory, 5=History, 6=Disk, 7=Borrar
+// The menu is built dynamically by buildProjectActions (configurable launchers
+// first, then the fixed actions), so dispatch switches on action kind — never on
+// hardcoded indices.
 func (m Model) handleProjectActionsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	actions := m.buildProjectActions()
+	maxIdx := len(actions) - 1
 	switch {
 	case msg.Type == tea.KeyEsc || (msg.Type == tea.KeyRunes && string(msg.Runes) == "q"):
 		// Esc/q returns to projects without executing any action (S4.8, S6.5)
@@ -273,7 +276,7 @@ func (m Model) handleProjectActionsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case msg.Type == tea.KeyRunes && string(msg.Runes) == "j":
 		fallthrough
 	case msg.Type == tea.KeyDown:
-		if m.ActionCursor < 7 {
+		if m.ActionCursor < maxIdx {
 			m.ActionCursor++
 		}
 		return m, nil
@@ -291,39 +294,39 @@ func (m Model) handleProjectActionsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if proj == nil {
 			return m, nil
 		}
-		switch m.ActionCursor {
-		case 0: // Abrir en Claude Code (existing)
-			return m, runOpenClaudeCmd(m.opener, m.registry, proj.ID, proj.Path)
-		case 1: // Abrir en VS Code (NEW)
+		if m.ActionCursor < 0 || m.ActionCursor > maxIdx {
+			return m, nil
+		}
+		action := actions[m.ActionCursor]
+		switch action.kind {
+		case actionLauncher: // Abrir en <agente configurado>
+			return m, runLaunchAgentCmd(m.opener, m.registry, proj.ID, proj.Path, action.name, action.command, action.args)
+		case actionVSCode:
 			return m, runOpenVSCodeCmd(m.opener, m.registry, proj.ID, proj.Path)
-		case 2: // Invocar PowerShell (was 1)
+		case actionPowerShell:
 			return m, runPowerShellCmd(m.opener, proj.Path)
-		case 3: // Copiar el sendero (was 2)
+		case actionCopyPath:
 			return m, runCopyPathCmd(m.clipboard, proj.Path)
-		case 4: // Ver memoria (NEW)
+		case actionMemory:
 			m.Screen = ScreenMemoryBrowser
-			proj := m.findProject(m.SelectedID)
 			m.memoryLoading = true
 			m.memoryEntries = nil
 			m.memoryViewing = nil
-			if m.engramClient != nil && proj != nil {
+			if m.engramClient != nil {
 				return m, loadMemoryCmd(m.engramClient, proj.Name)
 			}
 			return m, nil
-		case 5: // Ver historial (NEW)
+		case actionHistory:
 			m.Screen = ScreenProjectHistory
 			m.historyLoading = true
 			m.historyEntries = nil
 			m.historyViewingRef = ""
-			if proj != nil {
-				return m, loadHistoryCmd(m.engramClient, m.gitLogReader, proj.Name, proj.Path)
-			}
-			return m, nil
-		case 6: // Ver disco (NEW)
+			return m, loadHistoryCmd(m.engramClient, m.gitLogReader, proj.Name, proj.Path)
+		case actionDisk:
 			m.Screen = ScreenDiskUsage
 			m.diskLoading = true
 			return m, loadDiskUsageCmd(m.projects)
-		case 7: // Borrar (existing — was triggered from Projects with 'd', now also in menu)
+		case actionDelete:
 			if m.SelectedID == "" {
 				return m, nil
 			}

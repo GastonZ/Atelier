@@ -33,6 +33,69 @@ func TestDefaultAtelierConfig(t *testing.T) {
 	}
 }
 
+// --- Launchers ---
+
+func TestDefaultAtelierConfig_HasDefaultLaunchers(t *testing.T) {
+	cfg := config.DefaultAtelierConfig()
+	if len(cfg.Launchers) == 0 {
+		t.Fatal("DefaultAtelierConfig().Launchers is empty, want default launchers")
+	}
+	if cfg.Launchers[0].Command != "claude" {
+		t.Errorf("first default launcher command = %q, want claude", cfg.Launchers[0].Command)
+	}
+}
+
+func TestLoadAtelierConfig_LaunchersAbsent_UsesDefaults(t *testing.T) {
+	dir := t.TempDir()
+	// File present but with no launchers key → defaults preserved.
+	path := writeFile(t, dir, "config.yaml", "active_window_minutes: 30\n")
+
+	cfg, err := config.LoadAtelierConfig(path)
+	if err != nil {
+		t.Fatalf("LoadAtelierConfig error = %v", err)
+	}
+	if len(cfg.Launchers) != len(config.DefaultLaunchers()) {
+		t.Errorf("Launchers count = %d, want %d (defaults)", len(cfg.Launchers), len(config.DefaultLaunchers()))
+	}
+}
+
+func TestLoadAtelierConfig_LaunchersOverride(t *testing.T) {
+	dir := t.TempDir()
+	path := writeFile(t, dir, "config.yaml", `
+launchers:
+  - { label: "Aider", command: "aider", args: ["--no-auto-commits"] }
+`)
+
+	cfg, err := config.LoadAtelierConfig(path)
+	if err != nil {
+		t.Fatalf("LoadAtelierConfig error = %v", err)
+	}
+	if len(cfg.Launchers) != 1 {
+		t.Fatalf("Launchers count = %d, want 1", len(cfg.Launchers))
+	}
+	l := cfg.Launchers[0]
+	if l.Label != "Aider" || l.Command != "aider" {
+		t.Errorf("launcher = %+v, want Aider/aider", l)
+	}
+	if len(l.Args) != 1 || l.Args[0] != "--no-auto-commits" {
+		t.Errorf("launcher args = %v, want [--no-auto-commits]", l.Args)
+	}
+}
+
+func TestLoadAtelierConfig_EmptyLaunchersList_Respected(t *testing.T) {
+	dir := t.TempDir()
+	// Explicit empty list → no launchers (user opted out), not defaults.
+	path := writeFile(t, dir, "config.yaml", "launchers: []\n")
+
+	cfg, err := config.LoadAtelierConfig(path)
+	if err != nil {
+		t.Fatalf("LoadAtelierConfig error = %v", err)
+	}
+	if len(cfg.Launchers) != 0 {
+		t.Errorf("Launchers count = %d, want 0 (explicit empty)", len(cfg.Launchers))
+	}
+}
+
 // --- LoadAtelierConfig ---
 
 func TestLoadAtelierConfig_MissingFile_UsesDefaults(t *testing.T) {

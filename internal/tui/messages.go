@@ -33,18 +33,18 @@ type actionDoneMsg struct {
 	err   error
 }
 
-// runOpenClaudeCmd executes OpenInClaudeCode and Touch(id) asynchronously.
-func runOpenClaudeCmd(op Openers, reg registry.Registry, id, path string) tea.Cmd {
+// runLaunchAgentCmd launches a configured agent CLI in the project dir via
+// LaunchInDir and Touch(id), asynchronously. name is the launcher's display
+// label (e.g. "Claude Code") used in the success flash.
+func runLaunchAgentCmd(op Openers, reg registry.Registry, id, path, name, command string, args []string) tea.Cmd {
 	return func() tea.Msg {
-		err := op.OpenInClaudeCode(path)
-		if err != nil {
+		if err := op.LaunchInDir(path, command, args...); err != nil {
 			return actionDoneMsg{flash: "Un dragón rugió: " + err.Error(), err: err}
 		}
-		touchErr := reg.Touch(id)
-		if touchErr != nil {
-			return actionDoneMsg{flash: "Tomo abierto (no se pudo registrar la lectura)", err: nil}
+		if err := reg.Touch(id); err != nil {
+			return actionDoneMsg{flash: "Tomo abierto en " + name + " (no se pudo registrar la lectura)", err: nil}
 		}
-		return actionDoneMsg{flash: "Tomo abierto en Claude Code"}
+		return actionDoneMsg{flash: "Tomo abierto en " + name}
 	}
 }
 
@@ -72,6 +72,7 @@ func runCopyPathCmd(cb Clipboards, path string) tea.Cmd {
 
 // Openers is a local alias to avoid circular naming; mirrors actions.Opener.
 type Openers interface {
+	LaunchInDir(projectPath, command string, args ...string) error
 	OpenInClaudeCode(projectPath string) error
 	SpawnPowerShell(projectPath string) error
 	OpenInVSCode(projectPath string) error

@@ -23,12 +23,20 @@ func SetExecCommand(fn func(name string, arg ...string) *exec.Cmd) {
 // windowsOpener implements Opener using cmd.exe /c start for detached process launch.
 type windowsOpener struct{}
 
-// OpenInClaudeCode spawns the claude CLI in a new console at projectPath, detached.
-// Uses cmd.exe /c start "" claude so atelier's process tree does not own the new window.
-func (w *windowsOpener) OpenInClaudeCode(projectPath string) error {
-	cmd := execCommand("cmd.exe", "/c", "start", "", "claude")
+// LaunchInDir spawns command (with args) in a new console at projectPath, detached.
+// Uses cmd.exe /c start "" <command> [args...] so atelier's process tree does not
+// own the new window. This is the generic primitive behind every agent launcher.
+func (w *windowsOpener) LaunchInDir(projectPath, command string, args ...string) error {
+	cmdArgs := append([]string{"/c", "start", "", command}, args...)
+	cmd := execCommand("cmd.exe", cmdArgs...)
 	cmd.Dir = projectPath
 	return cmd.Start()
+}
+
+// OpenInClaudeCode launches the claude CLI at projectPath. Kept for the Opener
+// contract and existing callers; delegates to the generic LaunchInDir.
+func (w *windowsOpener) OpenInClaudeCode(projectPath string) error {
+	return w.LaunchInDir(projectPath, "claude")
 }
 
 // SpawnPowerShell opens a new PowerShell window at projectPath, detached.

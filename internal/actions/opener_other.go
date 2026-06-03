@@ -26,6 +26,10 @@ func unsupported(action string) error {
 	return fmt.Errorf("%s is not supported on %s yet (Windows only for now)", action, runtime.GOOS)
 }
 
+func (o *otherOpener) LaunchInDir(_, command string, _ ...string) error {
+	return unsupported("launching " + command)
+}
+
 func (o *otherOpener) OpenInClaudeCode(string) error { return unsupported("opening Claude Code") }
 
 func (o *otherOpener) SpawnPowerShell(string) error { return unsupported("spawning a shell") }

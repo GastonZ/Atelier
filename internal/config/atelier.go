@@ -9,8 +9,23 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Launcher describes one configurable "open this project in <tool>" action shown
+// in the per-project actions menu. Command is resolved on PATH and spawned
+// detached in the project directory; Args are passed verbatim after it (some CLIs
+// need a subcommand or flag). Example YAML:
+//
+//	launchers:
+//	  - { label: "Claude Code", command: "claude" }
+//	  - { label: "Codex",       command: "codex" }
+//	  - { label: "Aider",       command: "aider", args: ["--no-auto-commits"] }
+type Launcher struct {
+	Label   string   `yaml:"label"`
+	Command string   `yaml:"command"`
+	Args    []string `yaml:"args"`
+}
+
 // AtelierConfig holds runtime knobs read from ~/.atelier/config.yaml.
-// Defaults: ActiveWindowMinutes=15, PollingIntervalMs=500.
+// Defaults: ActiveWindowMinutes=15, PollingIntervalMs=500, Launchers=DefaultLaunchers().
 type AtelierConfig struct {
 	// ActiveWindowMinutes controls how recent (in minutes) a session's last-event
 	// mtime must be to appear in the active set. Default: 15.
@@ -19,14 +34,30 @@ type AtelierConfig struct {
 	// PollingIntervalMs is the fallback-polling tick period in milliseconds.
 	// Default: 500.
 	PollingIntervalMs int `yaml:"polling_interval_ms"`
+
+	// Launchers are the configurable agent/editor entries at the top of the
+	// per-project actions menu. Absent in the file → DefaultLaunchers(); present
+	// (even empty) → used verbatim, so users can fully customise or clear them.
+	Launchers []Launcher `yaml:"launchers"`
+}
+
+// DefaultLaunchers returns the agent launchers shipped out of the box: the
+// best-known AI coding CLIs. Users override the whole list via config.yaml.
+func DefaultLaunchers() []Launcher {
+	return []Launcher{
+		{Label: "Claude Code", Command: "claude"},
+		{Label: "Codex", Command: "codex"},
+		{Label: "Gemini", Command: "gemini"},
+	}
 }
 
 // DefaultAtelierConfig returns an AtelierConfig populated with the documented
-// defaults (active_window=15 min, polling=500ms). It never returns an error.
+// defaults (active_window=15 min, polling=500ms, default launchers). Never errors.
 func DefaultAtelierConfig() AtelierConfig {
 	return AtelierConfig{
 		ActiveWindowMinutes: 15,
 		PollingIntervalMs:   500,
+		Launchers:           DefaultLaunchers(),
 	}
 }
 
@@ -60,8 +91,9 @@ func atelierConfigPath(homeDir func() (string, error)) string {
 // rawAtelierConfig mirrors AtelierConfig but uses pointer fields so that yaml.v3
 // can distinguish between "field absent" and "field explicitly set to zero".
 type rawAtelierConfig struct {
-	ActiveWindowMinutes *int `yaml:"active_window_minutes"`
-	PollingIntervalMs   *int `yaml:"polling_interval_ms"`
+	ActiveWindowMinutes *int        `yaml:"active_window_minutes"`
+	PollingIntervalMs   *int        `yaml:"polling_interval_ms"`
+	Launchers           *[]Launcher `yaml:"launchers"`
 }
 
 // LoadAtelierConfig reads path and returns an AtelierConfig.
@@ -94,6 +126,10 @@ func LoadAtelierConfig(path string) (AtelierConfig, error) {
 	}
 	if raw.PollingIntervalMs != nil {
 		result.PollingIntervalMs = *raw.PollingIntervalMs
+	}
+	if raw.Launchers != nil {
+		// Present (even as an empty list) → honor the user's choice verbatim.
+		result.Launchers = *raw.Launchers
 	}
 	return result, nil
 }

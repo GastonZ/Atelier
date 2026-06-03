@@ -3,13 +3,24 @@ package actions_test
 // MockOpener captures call arguments and returns canned errors.
 // It implements the Opener interface.
 type MockOpener struct {
+	LaunchInDirCalls      []string // "path|command|arg1 arg2" per call
 	OpenInClaudeCodeCalls []string // projectPath per call
 	SpawnPowerShellCalls  []string
 	OpenInVSCodeCalls     []string
 
+	LaunchInDirErr      error
 	OpenInClaudeCodeErr error
 	SpawnPowerShellErr  error
 	OpenInVSCodeErr     error
+}
+
+func (m *MockOpener) LaunchInDir(projectPath, command string, args ...string) error {
+	rec := projectPath + "|" + command
+	for _, a := range args {
+		rec += " " + a
+	}
+	m.LaunchInDirCalls = append(m.LaunchInDirCalls, rec)
+	return m.LaunchInDirErr
 }
 
 func (m *MockOpener) OpenInClaudeCode(projectPath string) error {

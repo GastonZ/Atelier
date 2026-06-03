@@ -64,6 +64,38 @@ func TestWindowsOpener_OpenInClaudeCode_BuildsExpectedCommand(t *testing.T) {
 	_ = capturedDir
 }
 
+// TestWindowsOpener_LaunchInDir_BuildsExpectedCommand verifies the generic launcher
+// primitive: cmd.exe /c start "" <command> [args...].
+func TestWindowsOpener_LaunchInDir_BuildsExpectedCommand(t *testing.T) {
+	var capturedName string
+	var capturedArgs []string
+
+	actions.SetExecCommand(func(name string, args ...string) *exec.Cmd {
+		capturedName = name
+		capturedArgs = args
+		return exec.Command("cmd.exe", "/c", "exit", "0")
+	})
+	defer actions.SetExecCommand(exec.Command)
+
+	op := actions.NewOpener()
+	if err := op.LaunchInDir("/test/path", "codex", "--model", "o3"); err != nil {
+		_ = err // Start() on the fake cmd may succeed; the real assertion is on args
+	}
+
+	if capturedName != "cmd.exe" {
+		t.Errorf("command name = %q, want cmd.exe", capturedName)
+	}
+	wantArgs := []string{"/c", "start", "", "codex", "--model", "o3"}
+	if len(capturedArgs) != len(wantArgs) {
+		t.Fatalf("args = %v, want %v", capturedArgs, wantArgs)
+	}
+	for i, a := range wantArgs {
+		if capturedArgs[i] != a {
+			t.Errorf("args[%d] = %q, want %q", i, capturedArgs[i], a)
+		}
+	}
+}
+
 // TestWindowsOpener_SpawnPowerShell_BuildsExpectedCommand verifies R4.8 semantics.
 func TestWindowsOpener_SpawnPowerShell_BuildsExpectedCommand(t *testing.T) {
 	var capturedName string

@@ -107,6 +107,11 @@ type Model struct {
 	priceTable   transcripts.PriceTable
 	atelierCfg   config.AtelierConfig
 
+	// launcherAvailable reports whether a launcher command resolves on PATH
+	// (display-only greying). Defaults to actions.CommandAvailable in New;
+	// tests inject a deterministic stub.
+	launcherAvailable func(string) bool
+
 	// --- agent monitor state ---
 	agentSessions    []transcripts.Session // active sessions, sorted mtime-desc
 	AgentTileCursor  int                   // exported for tests — index into agentSessions
@@ -181,13 +186,15 @@ func New(reg registry.Registry, op actions.Opener, cb actions.Clipboard) Model {
 	path.CharLimit = 1024
 
 	return Model{
-		Screen:    ScreenWelcome,
-		registry:  reg,
-		opener:    op,
-		clipboard: cb,
-		nameInput: name,
-		pathInput: path,
-		AddFocus:  0,
+		Screen:            ScreenWelcome,
+		registry:          reg,
+		opener:            op,
+		clipboard:         cb,
+		nameInput:         name,
+		pathInput:         path,
+		AddFocus:          0,
+		atelierCfg:        config.DefaultAtelierConfig(),
+		launcherAvailable: actions.CommandAvailable,
 	}
 }
 
