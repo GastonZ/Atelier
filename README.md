@@ -47,10 +47,8 @@
 
 > **Mission Control for AI-assisted development.** A keyboard-driven terminal cockpit for everyone juggling multiple projects across Claude Code — written in Go with [Bubble Tea](https://github.com/charmbracelet/bubbletea).
 
-<!-- Add badges once CI is live:
 [![CI](https://github.com/GastonZ/Atelier/actions/workflows/ci.yml/badge.svg)](https://github.com/GastonZ/Atelier/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/gastonz/atelier)](https://goreportcard.com/report/github.com/gastonz/atelier)
--->
 
 ---
 
@@ -138,26 +136,35 @@ Test coverage spans unit tests, mocked-dependency tests, and golden snapshot tes
 
 ## Install
 
-### Prerequisites
-- Go 1.25+
-- (optional) the [Task](https://taskfile.dev) runner for the convenience commands
+### Download (recommended)
+
+Grab the latest prebuilt binary from the [**Releases**](https://github.com/GastonZ/Atelier/releases/latest) page — no Go toolchain required:
+
+1. Download `dragon_atelier-windows-amd64.exe` (Windows). Linux/macOS builds are attached too.
+2. Double-click it, or run it from a terminal.
+
+That's it. On first launch the project registry is empty — press `n` to add your projects.
+
+> **Prerequisites for the full experience:** the launchers and agent monitor expect [Claude Code](https://claude.com/claude-code) installed and `~/.claude/projects` present. Without it the app still runs; those panels just show empty. The Engram memory browser is optional too (nil-safe when `~/.engram` is absent).
 
 ### Build from source
+
+Prerequisites: Go 1.25+ and (optionally) the [Task](https://taskfile.dev) runner.
 
 ```sh
 git clone https://github.com/GastonZ/Atelier.git
 cd Atelier
-task build          # or: go build -o atelier ./cmd/atelier
+task build          # or: go build -o dragon_atelier ./cmd/atelier
 ```
 
 ## Run
 
 ```sh
-./atelier           # Linux / macOS
-./atelier.exe       # Windows
+./dragon_atelier           # Linux / macOS
+./dragon_atelier.exe       # Windows
 
-atelier version     # print version and exit
-atelier help        # usage
+dragon_atelier version     # print version and exit
+dragon_atelier help        # usage
 ```
 
 > Terminals smaller than ~100×48 show a text-only fallback. Resize for the full dragon.
