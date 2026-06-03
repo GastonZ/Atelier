@@ -1,4 +1,6 @@
 # Build artifacts
+/dragon_atelier
+/dragon_atelier.exe
 /atelier
 /atelier.exe
 /dist/

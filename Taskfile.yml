@@ -1,19 +1,19 @@
 version: '3'
 
 vars:
-  OUTPUT: "atelier{{exeExt}}"
+  OUTPUT: "dragon_atelier{{exeExt}}"
 
 tasks:
   default:
     deps: [build]
 
   build:
-    desc: Build the atelier binary
+    desc: Build the dragon_atelier binary
     cmds:
       - go build -o {{.OUTPUT}} ./cmd/atelier
 
   run:
-    desc: Build and run atelier
+    desc: Build and run dragon_atelier
     deps: [build]
     cmds:
       - "./{{.OUTPUT}}"

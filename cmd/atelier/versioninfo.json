@@ -16,9 +16,9 @@
   "StringFileInfo": {
     "CompanyName": "Gaston",
     "FileDescription": "Dragon Atelier",
-    "InternalName": "atelier",
+    "InternalName": "dragon_atelier",
     "LegalCopyright": "",
-    "OriginalFilename": "atelier.exe",
+    "OriginalFilename": "dragon_atelier.exe",
     "ProductName": "Dragon Atelier"
   },
   "VarFileInfo": {

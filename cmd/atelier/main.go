@@ -25,21 +25,21 @@ func main() {
 
 	switch cmd {
 	case "version", "--version", "-v":
-		fmt.Println("atelier", version.Version)
+		fmt.Println("dragon_atelier", version.Version)
 		return
 
 	case "help", "--help", "-h":
 		fmt.Println("Dragon Atelier — Mission Control for AI Workflows")
 		fmt.Println()
 		fmt.Println("Usage:")
-		fmt.Println("  atelier            Launch the TUI")
-		fmt.Println("  atelier tui        Launch the TUI (explicit)")
-		fmt.Println("  atelier version    Print version and exit")
-		fmt.Println("  atelier help       Show this help")
+		fmt.Println("  dragon_atelier            Launch the TUI")
+		fmt.Println("  dragon_atelier tui        Launch the TUI (explicit)")
+		fmt.Println("  dragon_atelier version    Print version and exit")
+		fmt.Println("  dragon_atelier help       Show this help")
 		fmt.Println()
 		fmt.Println("Flags:")
-		fmt.Println("  --help, -h         Show this help")
-		fmt.Println("  --version, -v      Print version and exit")
+		fmt.Println("  --help, -h                Show this help")
+		fmt.Println("  --version, -v             Print version and exit")
 		return
 
 	case "", "tui":
@@ -47,8 +47,8 @@ func main() {
 		return
 
 	default:
-		fmt.Fprintf(os.Stderr, "atelier: unknown command %q\n", cmd)
-		fmt.Fprintln(os.Stderr, "Run 'atelier help' for usage.")
+		fmt.Fprintf(os.Stderr, "dragon_atelier: unknown command %q\n", cmd)
+		fmt.Fprintln(os.Stderr, "Run 'dragon_atelier help' for usage.")
 		os.Exit(2)
 	}
 }
@@ -99,7 +99,7 @@ func runTUI() {
 		engramClient, gitStatusReader, gitLogReader,
 		npProvider, analyzer,
 	); err != nil {
-		fmt.Fprintln(os.Stderr, "atelier:", err)
+		fmt.Fprintln(os.Stderr, "dragon_atelier:", err)
 		os.Exit(1)
 	}
 }
